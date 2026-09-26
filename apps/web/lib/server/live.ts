@@ -3,6 +3,7 @@ import { assetSymbol, DecimalAmount, UtcTimestamp, type BinaryPriceOutcome } fro
 import { HyperliquidReader } from "@contour/hyperliquid";
 import type { PerpetualTerminalComponent } from "@contour/payoff";
 import type { CompilationDto, LiveUniverseDto, PublicAccountDto } from "../presentation/types";
+import { liveRequestFingerprint, marketSnapshotFingerprint, type LiveRequestFingerprintInput } from "../presentation/identity";
 import { freshnessState, minimumPnlFromInput, parseDecimalInput, validatePublicAddress } from "./input";
 import { presentCompilerResult } from "./presentation";
 
@@ -17,7 +18,12 @@ export interface LiveCompileInput {
   readonly constraintMode: "minimumPnl" | "maximumLoss";
   readonly constraintValue: string;
   readonly maximumBudget: string;
+  readonly marketContextIdentity: string;
   readonly exposure: { readonly source: "synthetic"; readonly direction: "long" | "short"; readonly quantity: string; readonly entryPrice: string } | { readonly source: "account"; readonly address: string; readonly positionIndex: number };
+}
+
+function requestFingerprintInput(input: LiveCompileInput): LiveRequestFingerprintInput {
+  return { mode: "live", exposure: input.exposure, settlementTimestamp: input.settlementTimestamp, minimumPrice: input.minimumPrice, maximumPrice: input.maximumPrice, constraintMode: input.constraintMode, constraintValue: input.constraintValue, maximumBudget: input.maximumBudget, feeTreatment: "excluded" };
 }
 
 function binaryMarkets(outcomes: readonly (BinaryPriceOutcome | { readonly kind: "generic" })[]): readonly BinaryPriceOutcome[] {
@@ -62,6 +68,8 @@ async function existingExposure(input: LiveCompileInput["exposure"]): Promise<Pe
 }
 
 export async function compileLive(input: LiveCompileInput): Promise<CompilationDto> {
+  const requestIdentity = liveRequestFingerprint(requestFingerprintInput(input));
+  if (typeof input.marketContextIdentity !== "string") throw new Error("live market context identity is required");
   const settlementTimestamp = UtcTimestamp.parse(input.settlementTimestamp);
   const outcomes = await reader.outcomeMarkets();
   const eligible = binaryMarkets(outcomes).filter((market) => market.settlementAt.value === settlementTimestamp.value);
@@ -75,5 +83,9 @@ export async function compileLive(input: LiveCompileInput): Promise<CompilationD
     constraint: { minimumTerminalPnl: minimumPnlFromInput(input.constraintMode, input.constraintValue) }, maximumAcquisitionCost: parseDecimalInput(input.maximumBudget, "maximum acquisition budget"), instruments,
     policy: { maximumBookAgeMs: 120_000, compilationTime: UtcTimestamp.fromEpochMilliseconds(Date.now()), feeModel: { kind: "excluded" } }
   };
-  return presentCompilerResult(request, await compileTerminalPayoff(request));
+  const marketSnapshotIdentity = marketSnapshotFingerprint(instruments.flatMap((instrument) => [
+    { marketId: instrument.market.id, side: "yes" as const, observedAt: instrument.yesBook.freshness.observedAt.value, source: instrument.yesBook.freshness.source, network: instrument.yesBook.freshness.network },
+    { marketId: instrument.market.id, side: "no" as const, observedAt: instrument.noBook.freshness.observedAt.value, source: instrument.noBook.freshness.source, network: instrument.noBook.freshness.network }
+  ]));
+  return presentCompilerResult(request, await compileTerminalPayoff(request), { mode: "live", requestIdentity, marketContextIdentity: input.marketContextIdentity, marketSnapshotIdentity });
 }

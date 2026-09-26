@@ -1,10 +1,11 @@
 import { type CompileTerminalPayoffRequest, type ExecutableBinaryInstrument } from "@contour/compiler";
 import { assetSymbol, DecimalAmount, outcomeId, UtcTimestamp, type BinaryPriceOutcome, type MarketFreshness, type OrderBookSnapshot } from "@contour/domain";
 import type { PerpetualTerminalComponent } from "@contour/payoff";
+import { VERIFIED_FIXTURE } from "../presentation/fixture-profile";
 
 const d = (value: string) => DecimalAmount.parse(value);
 const btc = assetSymbol("BTC");
-const settlement = UtcTimestamp.parse("2026-10-01T00:00:00Z");
+const settlement = UtcTimestamp.parse(VERIFIED_FIXTURE.settlementTimestamp);
 const freshness: MarketFreshness = { network: "mainnet", source: "hyperliquid-direct", observedAt: UtcTimestamp.parse("2026-09-30T23:59:30Z") };
 
 function fixtureBook(id: string, sideIndex: 0 | 1, asks: readonly [string, string][]): OrderBookSnapshot {
@@ -20,10 +21,10 @@ function fixtureMarket(id: string, threshold: string, yes: readonly [string, str
 }
 
 export function createFixtureRequest(): CompileTerminalPayoffRequest {
-  const existing: PerpetualTerminalComponent = { kind: "perpetual", asset: btc, direction: "long", quantity: d("1"), entryPrice: d("100"), externalTerms: "excluded" };
+  const existing: PerpetualTerminalComponent = { kind: "perpetual", asset: btc, direction: VERIFIED_FIXTURE.direction, quantity: d(VERIFIED_FIXTURE.quantity), entryPrice: d(VERIFIED_FIXTURE.entryPrice), externalTerms: "excluded" };
   return {
-    existingPortfolio: { components: [existing] }, settlement: { underlying: btc, timestamp: settlement, priceRange: { min: d("0"), max: d("100") } }, constraint: { minimumTerminalPnl: d("-40") }, maximumAcquisitionCost: d("100"),
-    instruments: [fixtureMarket("101", "25", [["0.8", "10"]], [["0.1", "30"]]), fixtureMarket("102", "50", [["0.8", "10"]], [["0.1", "30"]]), fixtureMarket("103", "75", [["0.8", "10"]], [["0.1", "20"], ["0.12", "20"]])],
+    existingPortfolio: { components: [existing] }, settlement: { underlying: btc, timestamp: settlement, priceRange: { min: d(VERIFIED_FIXTURE.minimumPrice), max: d(VERIFIED_FIXTURE.maximumPrice) } }, constraint: { minimumTerminalPnl: d(VERIFIED_FIXTURE.minimumTerminalPnl) }, maximumAcquisitionCost: d(VERIFIED_FIXTURE.maximumBudget),
+    instruments: [fixtureMarket("101", VERIFIED_FIXTURE.strikes[0], [["0.8", "300"]], [["0.1", "300"]]), fixtureMarket("102", VERIFIED_FIXTURE.strikes[1], [["0.8", "300"]], [["0.1", "300"]]), fixtureMarket("103", VERIFIED_FIXTURE.strikes[2], [["0.8", "300"]], [["0.1", "300"], ["0.12", "300"]])],
     policy: { maximumBookAgeMs: 60_000, compilationTime: UtcTimestamp.parse("2026-10-01T00:00:00Z"), feeModel: { kind: "excluded" } }
   };
 }

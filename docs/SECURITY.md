@@ -7,3 +7,5 @@ The public-address probe accepts only an address and calls the public account-st
 Compiler output is independently exact-verified, but terminal-payoff verification is not a safety guarantee against liquidation, oracle behavior, market outages, stale liquidity after the snapshot, execution slippage, fees excluded by policy, or settlement disputes.
 
 The BUILD 02 web terminal validates browser input again on the server. Public-address inspection is read-only; it does not connect a wallet or establish account control. Raw protocol payloads and internal error stacks are not returned to browser components.
+
+BUILD 02.1 contains no `window.ethereum`, `ethereum.request`, MetaMask, or browser-extension integration. Reported extension-injected hydration markup is not suppressed or handled by Contour; application markup remains deterministic.

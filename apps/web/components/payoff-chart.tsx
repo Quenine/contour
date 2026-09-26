@@ -1,6 +1,7 @@
 "use client";
 
 import type { CompilationDto } from "../lib/presentation/types";
+import { formatBtcPrice, formatMoney } from "../lib/presentation/format";
 
 export function PayoffChart({ result }: { readonly result: CompilationDto | undefined }): React.JSX.Element {
   const chart = result?.chart;
@@ -18,7 +19,7 @@ export function PayoffChart({ result }: { readonly result: CompilationDto | unde
     {chart.strikes.map((strike) => <line key={`${strike.label}-${strike.price}`} x1={x(strike.price)} x2={x(strike.price)} y1={pad.top} y2={height - pad.bottom} className="strike-line" />)}
     <path d={line("originalPnl")} className="curve original" />
     <path d={line("compiledPnl")} className="curve compiled" />
-    <text x={pad.left} y={height - 12} className="chart-text">${chart.protectedMin.toLocaleString()}</text><text x={width - pad.right} y={height - 12} textAnchor="end" className="chart-text">${chart.protectedMax.toLocaleString()}</text>
-    <text x={pad.left} y={y(chart.floor) - 6} className="chart-text floor-text">Floor {chart.floor.toLocaleString()}</text>
+    <text x={pad.left} y={height - 12} className="chart-text">{formatBtcPrice(String(chart.protectedMin))}</text><text x={width - pad.right} y={height - 12} textAnchor="end" className="chart-text">{formatBtcPrice(String(chart.protectedMax))}</text>
+    <text x={pad.left} y={y(chart.floor) - 6} className="chart-text floor-text">Floor {formatMoney(String(chart.floor))}</text>
   </svg><p className="chart-note">{chart.note}</p></section>;
 }

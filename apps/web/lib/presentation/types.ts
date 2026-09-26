@@ -20,6 +20,13 @@ export interface VerificationDto { readonly passed: boolean; readonly worstCaseP
 export interface PositionDto { readonly marketId: string; readonly statement: string; readonly side: "yes" | "no"; readonly quantity: string; readonly weightedAverage: { readonly acquisitionCost: string; readonly quantity: string }; readonly acquisitionCost: string; readonly estimatedFee: string; }
 export interface ExecutionSegmentDto { readonly marketId: string; readonly side: "yes" | "no"; readonly bookLevel: number; readonly bookPrice: string; readonly quantity: string; readonly available: string; readonly acquisitionCost: string; readonly estimatedFee: string; }
 export interface CompilationDto {
+  readonly mode: TerminalMode;
+  /** Deterministic identity of the compiler-affecting request fields. */
+  readonly requestIdentity: string;
+  /** UI market context captured before a live request; prevents old books from looking current after refresh. */
+  readonly marketContextIdentity?: string;
+  /** Canonical identity of the exact order-book snapshots used by the compiler. */
+  readonly marketSnapshotIdentity?: string;
   readonly status: "FEASIBLE" | "ALREADY_SATISFIED" | "INFEASIBLE" | "INVALID_REQUEST" | "VERIFICATION_FAILED" | "SOLVER_FAILURE";
   readonly underlying?: string;
   readonly settlementTimestamp?: string;
