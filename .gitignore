@@ -3,3 +3,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 .env
+
+# Next.js generated build output
+apps/web/.next/

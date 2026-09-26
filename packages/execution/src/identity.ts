@@ -19,6 +19,6 @@ export function executionSnapshot(request: CompileTerminalPayoffRequest): Execut
   };
 }
 
-export function executionPlanIdentity(requestIdentity: string, snapshotIdentity: string, orders: readonly Pick<ExecutionOrder, "marketId" | "side" | "sourceBookLevel" | "plannedPriceText" | "plannedQuantityText">[]): string {
-  return `contour-plan-v1:${JSON.stringify({ requestIdentity, snapshotIdentity, orders: orders.map((order) => [order.marketId, order.side, order.sourceBookLevel, order.plannedPriceText, order.plannedQuantityText]) })}`;
+export function executionPlanIdentity(requestIdentity: string, snapshotIdentity: string, orders: readonly Pick<ExecutionOrder, "marketId" | "side" | "sourceBookLevel" | "plannedPriceText" | "plannedQuantityText">[], trustPolicy: string): string {
+  return `contour-plan-v1:${JSON.stringify({ requestIdentity, snapshotIdentity, trustPolicy, orders: orders.map((order) => [order.marketId, order.side, order.sourceBookLevel, order.plannedPriceText, order.plannedQuantityText]) })}`;
 }

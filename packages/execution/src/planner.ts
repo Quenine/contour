@@ -4,6 +4,7 @@ import { executionPlanIdentity, executionSnapshot } from "./identity.js";
 import { minimumSizeForNotional, normalizeLimitPrice, normalizeSize } from "./decimal.js";
 import { renderDryRunReport } from "./report.js";
 import { auditExecutionPlan } from "./audit.js";
+import { evidenceSatisfiesPolicy } from "./evidence.js";
 import type { BuilderFeeTreatment, ExecutionBlocker, ExecutionLeg, ExecutionOrder, ExecutionPlan, ExecutionPlanResult, ExecutionPlannerInput, ClientOrderIntentId } from "./types.js";
 
 const blocked = (status: Exclude<ExecutionPlanResult["status"], "READY" | "NOT_NEEDED">, blocker: ExecutionBlocker, snapshot?: ReturnType<typeof executionSnapshot>): ExecutionPlanResult => ({ status, blockers: [blocker], ...(snapshot ? { snapshot } : {}) });
@@ -51,6 +52,7 @@ export function planExecution(input: ExecutionPlannerInput): ExecutionPlanResult
   if (!Number.isSafeInteger(input.maximumBookAgeMs) || input.maximumBookAgeMs < 0) return blocked("INVALID_COMPILER_RESULT", { kind: "INVALID_COMPILER_RESULT", explanation: "execution freshness maximum must be a non-negative safe integer" });
 
   const snapshot = executionSnapshot(input.request);
+  if (input.trustPolicy === "STRICT_MAINNET" && input.request.instruments.some((instrument) => instrument.market.freshness.network !== "mainnet" || instrument.yesBook.freshness.network !== "mainnet" || instrument.noBook.freshness.network !== "mainnet")) return blocked("PROTOCOL_METADATA_UNAVAILABLE", { kind: "PROTOCOL_METADATA_UNAVAILABLE", marketId: input.request.instruments[0]?.market.id ?? "unknown", side: "yes", field: "precision", explanation: "STRICT_MAINNET cannot consume testnet, fixture, or mixed-network market observations" }, snapshot);
   const currentIdentity = input.currentSnapshotIdentity ?? snapshot.identity;
   if (input.compilerSnapshotIdentity !== snapshot.identity || currentIdentity !== snapshot.identity) return blocked("MARKET_CHANGED", { kind: "MARKET_CHANGED", expectedSnapshotIdentity: input.compilerSnapshotIdentity, actualSnapshotIdentity: currentIdentity === snapshot.identity ? snapshot.identity : currentIdentity }, snapshot);
   const checkedMs = Date.parse(input.checkedAt.value);
@@ -62,6 +64,7 @@ export function planExecution(input: ExecutionPlannerInput): ExecutionPlanResult
   const builder = builderTreatment(input);
   if ("kind" in builder) return blocked("FEE_UNRESOLVED", builder, snapshot);
   if (input.protocolFee.kind !== "KNOWN_ZERO_OUTCOME_MARKET") return blocked("FEE_UNRESOLVED", { kind: "FEE_UNRESOLVED", explanation: input.protocolFee.explanation }, snapshot);
+  if (!evidenceSatisfiesPolicy(input.protocolFee.evidence, input.trustPolicy)) return blocked("FEE_UNRESOLVED", { kind: "FEE_UNRESOLVED", explanation: `${input.trustPolicy} does not accept ${input.protocolFee.evidence.authority} protocol-fee evidence (${input.protocolFee.evidence.source})` }, snapshot);
 
   const metadata = new Map(input.protocolMetadata.map((item) => [metadataKey(item.marketId, item.side), item]));
   const seeds: Seed[] = [];
@@ -75,8 +78,10 @@ export function planExecution(input: ExecutionPlannerInput): ExecutionPlanResult
     const protocol = metadata.get(metadataKey(segment.marketId, segment.side));
     if (!protocol) return blocked("PROTOCOL_METADATA_UNAVAILABLE", { kind: "PROTOCOL_METADATA_UNAVAILABLE", marketId: segment.marketId, side: segment.side, field: "precision", explanation: "no protocol metadata was supplied for the selected outcome side" }, snapshot);
     if (protocol.precision.kind === "UNAVAILABLE") return blocked("PROTOCOL_METADATA_UNAVAILABLE", { kind: "PROTOCOL_METADATA_UNAVAILABLE", marketId: segment.marketId, side: segment.side, field: "precision", explanation: protocol.precision.explanation }, snapshot);
+    if (!evidenceSatisfiesPolicy(protocol.precision.evidence, input.trustPolicy)) return blocked("PROTOCOL_METADATA_UNAVAILABLE", { kind: "PROTOCOL_METADATA_UNAVAILABLE", marketId: segment.marketId, side: segment.side, field: "precision", explanation: `${input.trustPolicy} does not accept ${protocol.precision.evidence.authority} size precision evidence (${protocol.precision.evidence.source}); empirical quantities or SDK assumptions do not establish authoritative outcome szDecimals` }, snapshot);
     if (!Number.isSafeInteger(protocol.precision.szDecimals) || protocol.precision.szDecimals < 0 || protocol.precision.szDecimals > 8 || protocol.precision.maximumPriceDecimalPlaces !== 8 - protocol.precision.szDecimals) return blocked("PRECISION_UNSUPPORTED", { kind: "PRECISION_UNSUPPORTED", marketId: segment.marketId, side: segment.side, explanation: "outcome precision must use the documented spot-style 8 - szDecimals price rule" }, snapshot);
     if (protocol.minimumNotional.kind === "UNAVAILABLE") return blocked("PROTOCOL_METADATA_UNAVAILABLE", { kind: "PROTOCOL_METADATA_UNAVAILABLE", marketId: segment.marketId, side: segment.side, field: "minimumNotional", explanation: protocol.minimumNotional.explanation }, snapshot);
+    if (!evidenceSatisfiesPolicy(protocol.minimumNotional.evidence, input.trustPolicy)) return blocked("PROTOCOL_METADATA_UNAVAILABLE", { kind: "PROTOCOL_METADATA_UNAVAILABLE", marketId: segment.marketId, side: segment.side, field: "minimumNotional", explanation: `${input.trustPolicy} requires official Hyperliquid documentation or live protocol metadata for minimum notional; available evidence is ${protocol.minimumNotional.evidence.authority} (${protocol.minimumNotional.evidence.source})` }, snapshot);
     const plannedPrice = normalizeLimitPrice(source.price, protocol.precision, "BUY");
     if (plannedPrice.value.compare(source.price) < 0 || plannedPrice.value.compare(DecimalAmount.one) > 0) return blocked("PRECISION_UNSUPPORTED", { kind: "PRECISION_UNSUPPORTED", marketId: segment.marketId, side: segment.side, explanation: "safe BUY price normalization produced an invalid outcome limit" }, snapshot);
     const down = normalizeSize(segment.quantity, protocol.precision.szDecimals, "DOWN").value;
@@ -112,10 +117,10 @@ export function planExecution(input: ExecutionPlannerInput): ExecutionPlanResult
     const orders = chosen.filter((order) => metadataKey(order.marketId, order.side) === key); const first = orders[0]!;
     return { marketId: first.marketId, side: first.side, orderIntentIds: orders.map((order) => order.intentId), totalQuantity: orders.reduce((sum, order) => sum.add(order.plannedQuantity), DecimalAmount.zero), totalNotional: orders.reduce((sum, order) => sum.add(order.notional), DecimalAmount.zero) };
   });
-  const identity = executionPlanIdentity(input.requestIdentity, snapshot.identity, chosen);
+  const identity = executionPlanIdentity(input.requestIdentity, snapshot.identity, chosen, input.trustPolicy);
   const network = input.request.instruments[0]?.market.freshness.network ?? "mainnet";
   const withoutReport = {
-    identity, status: "READY" as const, network, underlying: input.request.settlement.underlying, settlementTimestamp: input.request.settlement.timestamp.value,
+    identity, status: "READY" as const, trustPolicy: input.trustPolicy, network, underlying: input.request.settlement.underlying, settlementTimestamp: input.request.settlement.timestamp.value,
     requestIdentity: input.requestIdentity, compilerSnapshotIdentity: input.compilerSnapshotIdentity, snapshot,
     freshness: { checkedAt: input.checkedAt.value, maximumAllowedAgeMs: input.maximumBookAgeMs, maximumAgeMs: maxAgeMs }, orders: chosen, legs,
     originalCompiledPremium: input.compilerResult.totalAcquisitionCost, executableNormalizedPremium: chosenTotal, budget: input.request.maximumAcquisitionCost, verification: chosenVerification

@@ -9,14 +9,16 @@ export const dryRunWarnings = [
 
 export function renderDryRunReport(plan: Omit<ExecutionPlan, "report">): DryRunReport {
   const lines = [
-    "CONTOUR EXECUTION DRY RUN", "", `Network: ${plan.network}`, `Underlying: ${plan.underlying}`, `Settlement: ${plan.settlementTimestamp}`,
+    "CONTOUR EXECUTION DRY RUN", "", `Network: ${plan.network}`, `Trust policy: ${plan.trustPolicy}`, `Underlying: ${plan.underlying}`, `Settlement: ${plan.settlementTimestamp}`,
     "", "Compiler:", "  FEASIBLE", "", "Orders:"
   ];
   for (const order of plan.orders) lines.push(
     "", `${order.sequence}.`, `  market: ${order.marketId} ${order.side.toUpperCase()}`, `  asset: ${order.protocolAssetId}`,
     `  source ask: ${order.sourcePrice.toString()}`, `  source available: ${order.sourceAvailableQuantity.toString()}`,
     `  planned limit: ${order.plannedPriceText}`, `  planned quantity: ${order.plannedQuantityText}`, `  notional: ${order.notional.toString()}`,
-    `  size precision: ${order.precision.szDecimals} decimals`, `  min notional: ${order.minimumNotional.amount.toString()} ${order.minimumNotional.quoteAsset}`,
+    `  size precision: ${order.precision.szDecimals} decimals (${order.precision.evidence.authority}: ${order.precision.evidence.source})`, `  min notional: ${order.minimumNotional.amount.toString()} ${order.minimumNotional.quoteAsset} (${order.minimumNotional.evidence.authority}: ${order.minimumNotional.evidence.source})`,
+    ...(order.precision.evidence.authority === "OPERATOR_OVERRIDE" || order.minimumNotional.evidence.authority === "OPERATOR_OVERRIDE" ? ["  OPERATOR OVERRIDE: explicitly supplied for development dry-run; not protocol-discovered"] : []),
+    ...(order.minimumNotional.conflicts.length ? [`  minimum-notional conflicting evidence: ${order.minimumNotional.conflicts.map((item) => `${item.authority}=${item.value} (${item.source})`).join("; ")}`] : []),
     `  builder fee: ${order.builderFee.state.toLowerCase()} (${order.builderFee.requestedRateTenthsBps})`, `  protocol fee: ${order.protocolFee.kind}`
   );
   lines.push(

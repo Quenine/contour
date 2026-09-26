@@ -1,4 +1,5 @@
 export * from "./decimal.js";
+export * from "./evidence.js";
 export * from "./audit.js";
 export * from "./identity.js";
 export * from "./metadata.js";

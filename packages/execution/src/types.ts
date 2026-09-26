@@ -8,6 +8,19 @@ export type ExecutionPlanStatus =
   | "INSUFFICIENT_CURRENT_DEPTH" | "MARKET_CHANGED" | "INVALID_COMPILER_RESULT"
   | "FEE_UNRESOLVED" | "PROTOCOL_METADATA_UNAVAILABLE";
 
+export type EvidenceAuthority = "OFFICIAL_DOCUMENTATION" | "LIVE_PROTOCOL_METADATA" | "MAINTAINED_SDK" | "EMPIRICAL_LIVE_OBSERVATION" | "SECONDARY_DOCUMENTATION" | "OPERATOR_OVERRIDE" | "FIXTURE";
+export type ExecutionTrustPolicy = "STRICT_MAINNET" | "DEVELOPMENT_DRY_RUN";
+
+export interface ProtocolRuleEvidence<T> {
+  readonly value: T;
+  readonly authority: EvidenceAuthority;
+  readonly source: string;
+  readonly observedAt: UtcTimestamp;
+  readonly network: "mainnet" | "testnet" | "fixture" | "not-applicable";
+  readonly applicability: string;
+  readonly confidence: "authoritative" | "maintained" | "observed" | "operator-supplied" | "fixture";
+}
+
 export type ExecutionBlocker =
   | { readonly kind: "STALE_MARKET"; readonly observedAt: string; readonly checkedAt: string; readonly ageMs: number; readonly maximumAllowedAgeMs: number }
   | { readonly kind: "PRECISION_UNSUPPORTED"; readonly marketId: string; readonly side: OutcomeSide; readonly explanation: string }
@@ -20,11 +33,11 @@ export type ExecutionBlocker =
   | { readonly kind: "PROTOCOL_METADATA_UNAVAILABLE"; readonly marketId: string; readonly side: OutcomeSide; readonly field: "precision" | "minimumNotional"; readonly explanation: string };
 
 export type ProtocolPrecision =
-  | { readonly kind: "KNOWN"; readonly regime: "SPOT_STYLE"; readonly szDecimals: number; readonly maximumPriceSignificantFigures: 5; readonly maximumPriceDecimalPlaces: number; readonly source: string; readonly observedAt: UtcTimestamp }
+  | { readonly kind: "KNOWN"; readonly regime: "SPOT_STYLE"; readonly szDecimals: number; readonly maximumPriceSignificantFigures: 5; readonly maximumPriceDecimalPlaces: number; readonly evidence: ProtocolRuleEvidence<number> }
   | { readonly kind: "UNAVAILABLE"; readonly source: string; readonly observedAt: UtcTimestamp; readonly explanation: string };
 
 export type MinimumNotional =
-  | { readonly kind: "KNOWN"; readonly amount: DecimalAmount; readonly quoteAsset: string; readonly protocolEnforced: boolean; readonly source: string; readonly observedAt: UtcTimestamp }
+  | { readonly kind: "KNOWN"; readonly amount: DecimalAmount; readonly quoteAsset: string; readonly evidence: ProtocolRuleEvidence<string>; readonly conflicts: readonly ProtocolRuleEvidence<string>[] }
   | { readonly kind: "UNAVAILABLE"; readonly source: string; readonly observedAt: UtcTimestamp; readonly explanation: string };
 
 export interface OutcomeSideProtocolMetadata {
@@ -37,7 +50,7 @@ export interface OutcomeSideProtocolMetadata {
 }
 
 export type ProtocolFeeTreatment =
-  | { readonly kind: "KNOWN_ZERO_OUTCOME_MARKET"; readonly source: string; readonly observedAt: UtcTimestamp; readonly settlementFeeIncluded: false }
+  | { readonly kind: "KNOWN_ZERO_OUTCOME_MARKET"; readonly evidence: ProtocolRuleEvidence<"zero">; readonly settlementFeeIncluded: false }
   | { readonly kind: "USER_SPECIFIC" | "FILL_DEPENDENT" | "UNKNOWN"; readonly explanation: string; readonly settlementFeeIncluded: false };
 
 export interface BuilderFeeTreatment {
@@ -100,6 +113,7 @@ export interface DryRunReport {
 export interface ExecutionPlan {
   readonly identity: string;
   readonly status: "READY";
+  readonly trustPolicy: ExecutionTrustPolicy;
   readonly network: "mainnet" | "testnet";
   readonly underlying: string;
   readonly settlementTimestamp: string;
@@ -131,6 +145,7 @@ export interface ExecutionPlannerInput {
   readonly protocolFee: ProtocolFeeTreatment;
   readonly checkedAt: UtcTimestamp;
   readonly maximumBookAgeMs: number;
+  readonly trustPolicy: ExecutionTrustPolicy;
   readonly builderFee?: { readonly requestedRateTenthsBps: number; readonly builderAddress?: string };
 }
 

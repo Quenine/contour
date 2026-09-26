@@ -18,7 +18,8 @@
     "probe:compiler:fixture": "pnpm --filter @contour/probe probe:compiler:fixture",
     "probe:compiler:live": "pnpm --filter @contour/probe probe:compiler:live",
     "probe:execution:fixture": "pnpm --filter @contour/probe probe:execution:fixture",
-    "probe:execution:live": "pnpm --filter @contour/probe probe:execution:live"
+    "probe:execution:live": "pnpm --filter @contour/probe probe:execution:live",
+    "probe:execution:evidence": "pnpm --filter @contour/probe probe:execution:evidence"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
