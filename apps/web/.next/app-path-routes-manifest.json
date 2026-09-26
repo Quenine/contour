@@ -1,0 +1,10 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/account/route": "/api/account",
+  "/api/fixture/compile/route": "/api/fixture/compile",
+  "/api/live/compile/route": "/api/live/compile",
+  "/api/live/universe/route": "/api/live/universe",
+  "/page": "/",
+  "/system/page": "/system"
+}
