@@ -1,0 +1,8 @@
+{
+  "name": "@contour/probe",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "tsc -b", "probe:markets": "node dist/index.js markets", "probe:account": "node dist/index.js account" },
+  "dependencies": { "@contour/hyperliquid": "workspace:*" }
+}
