@@ -38,6 +38,9 @@ importers:
       '@contour/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@contour/execution':
+        specifier: workspace:*
+        version: link:../../packages/execution
       '@contour/hyperliquid':
         specifier: workspace:*
         version: link:../../packages/hyperliquid
@@ -53,6 +56,9 @@ importers:
       '@contour/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@contour/execution':
+        specifier: workspace:*
+        version: link:../../packages/execution
       '@contour/hyperliquid':
         specifier: workspace:*
         version: link:../../packages/hyperliquid
@@ -89,6 +95,18 @@ importers:
         version: 1.15.3
 
   packages/domain: {}
+
+  packages/execution:
+    dependencies:
+      '@contour/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      '@contour/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@contour/payoff':
+        specifier: workspace:*
+        version: link:../payoff
 
   packages/hyperliquid:
     dependencies:

@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "composite": true, "rootDir": "src", "outDir": "dist", "tsBuildInfoFile": "dist/.tsbuildinfo" },
-  "references": [{ "path": "../../packages/compiler" }, { "path": "../../packages/domain" }, { "path": "../../packages/hyperliquid" }, { "path": "../../packages/payoff" }],
+  "references": [{ "path": "../../packages/compiler" }, { "path": "../../packages/domain" }, { "path": "../../packages/execution" }, { "path": "../../packages/hyperliquid" }, { "path": "../../packages/payoff" }],
   "include": ["src/**/*.ts"]
 }

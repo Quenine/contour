@@ -1,0 +1,14 @@
+{
+  "name": "@contour/execution",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@contour/compiler": "workspace:*",
+    "@contour/domain": "workspace:*",
+    "@contour/payoff": "workspace:*"
+  },
+  "scripts": { "build": "tsc -b" }
+}

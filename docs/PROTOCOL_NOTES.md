@@ -25,3 +25,9 @@ Order-book lookup uses the current public-info coin key `#(10 × outcomeId + sid
 - BUILD 01 consumes every normalized ask level as separately bounded liquidity. Current live metadata does not expose a version-stable quantity/lot precision rule that Contour can safely assert, so candidate quantities are not represented as execution-ready signed quantities.
 - The live compiler's fee policy remains explicit and currently excludes fees; no reliable universal fee percentage is inferred from the book or metadata.
 - The repository records no fabricated live snapshot. Run `pnpm probe:markets` to make a current observation.
+
+## BUILD 03 execution observations (2026-09-26)
+
+- Official tick/lot documentation defines the five-significant-figure rule, spot maximum of `8 - szDecimals` price decimals, and `szDecimals` lot precision. HIP-4 uses spot-like order mechanics, but current live `outcomeMeta` and its side specs expose no `szDecimals`. Live readiness therefore blocks rather than deriving it from displayed book quantities.
+- Official HIP-4 documentation currently says outcome-market protocol fees are zero for initial testing and builder codes follow spot behavior, applying to sells. BUILD 03 BUY plans record known-zero protocol fee provenance and disable builder fees.
+- Official docs do not state the current outcome minimum notional. Maintained `@outcome.xyz/hip4@1.2.0-beta.1` source says the exchange-enforced minimum is 1 USDC after a 2026-09-05 upgrade, while older README/npm-latest material still shows a 10-USDC client setting. Contour uses the current beta's 1-USDC rule with explicit provenance; this remains a protocol uncertainty to re-audit.

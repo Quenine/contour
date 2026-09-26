@@ -8,6 +8,7 @@ import { isResultCurrent, liveRequestFingerprint, marketContextFingerprint, type
 import { createFixtureRequest } from "../lib/server/fixture.js";
 import { freshnessState, minimumPnlFromInput, validatePublicAddress } from "../lib/server/input.js";
 import { presentCompilerResult } from "../lib/server/presentation.js";
+import { planFixtureExecution } from "../lib/server/execution.js";
 
 const fixtureIdentity = { mode: "fixture" as const, requestIdentity: verifiedFixtureRequestIdentity };
 const liveInput = (overrides: Partial<LiveRequestFingerprintInput> = {}): LiveRequestFingerprintInput => ({ mode: "live", exposure: { source: "synthetic", direction: "long", quantity: "0.01", entryPrice: "80000" }, settlementTimestamp: "2026-10-02T00:00:00.000Z", minimumPrice: "70000", maximumPrice: "90000", constraintMode: "minimumPnl", constraintValue: "-500", maximumBudget: "100", feeTreatment: "excluded", ...overrides });
@@ -20,6 +21,10 @@ describe("web orchestration", () => {
     expect(dto.status).toBe("FEASIBLE"); expect(dto.verification?.passed).toBe(true); expect(dto.executionSegments?.length).toBeGreaterThan(0); expect(dto.chart?.note).toContain("Visualization samples only");
     expect(request.existingPortfolio.components[0]).toMatchObject({ quantity: DecimalAmount.parse(VERIFIED_FIXTURE.quantity), entryPrice: DecimalAmount.parse(VERIFIED_FIXTURE.entryPrice) });
     expect(request.settlement.priceRange.min.toString()).toBe(VERIFIED_FIXTURE.minimumPrice); expect(request.settlement.priceRange.max.toString()).toBe(VERIFIED_FIXTURE.maximumPrice);
+  });
+  it("attaches a READY, identity-bound dry-run preview to the feasible fixture", async () => {
+    const request = createFixtureRequest(); const result = await compileTerminalPayoff(request); const execution = planFixtureExecution(request, result, verifiedFixtureRequestIdentity); const dto = presentCompilerResult(request, result, fixtureIdentity, execution);
+    expect(execution.status).toBe("READY"); expect(dto.executionPreview).toMatchObject({ status: "READY", verificationPassed: true }); expect(dto.executionPreview?.orders?.some((order) => order.quantity.includes("."))).toBe(true);
   });
   it("converts maximum loss into the canonical minimum-PnL constraint", () => expect(minimumPnlFromInput("maximumLoss", "40").toString()).toBe("-40"));
   it("rejects malformed settlement-facing decimal and address input", () => { expect(() => minimumPnlFromInput("minimumPnl", "bad")).toThrow(); expect(() => validatePublicAddress("not-an-address")).toThrow(); });

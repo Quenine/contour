@@ -18,4 +18,8 @@ Freshness is shown as `LIVE`, `STALE`, or `UNAVAILABLE`. A verified live compile
 
 For local development, install workspace dependencies and run `pnpm dev`. The terminal is available at `/`; `/system` reports read-only integration status. No signing, execution, or custody capability exists.
 
+For a matching `FEASIBLE` result, `Preview Execution` reveals the server-produced dry run. It shows protocol-formatted limits and sizes, segment depth, notionals, precision/minimum checks, exact post-normalization proof, freshness, zero/disabled builder fee, protocol fee treatment, and partial-fill/market-movement warnings. If metadata or another eligibility rule is unresolved, the exact blocker is shown instead.
+
+The preview carries the same compiler request identity and exact `contour-book-v1` snapshot identity as its result. Input edits, mode switches, and live refreshes clear the result; the preview component also closes whenever either identity changes. The action is intentionally named Preview Execution and cannot sign or send anything.
+
 BUILD 02.1 audited reported `data-scribe-recorder-ready` hydration markup and MetaMask connection noise. Neither string nor a wallet API reference exists in Contour; the observed messages originate in browser extensions and receive no application workaround.

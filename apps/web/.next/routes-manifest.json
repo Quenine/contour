@@ -54,6 +54,12 @@
       "namedRegex": "^/api/fixture/compile(?:/)?$"
     },
     {
+      "page": "/api/fixture/execution",
+      "regex": "^/api/fixture/execution(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/fixture/execution(?:/)?$"
+    },
+    {
       "page": "/api/live/compile",
       "regex": "^/api/live/compile(?:/)?$",
       "routeKeys": {},

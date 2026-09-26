@@ -3,6 +3,7 @@
   "/_not-found/page": "app/_not-found/page.js",
   "/api/account/route": "app/api/account/route.js",
   "/api/fixture/compile/route": "app/api/fixture/compile/route.js",
+  "/api/fixture/execution/route": "app/api/fixture/execution/route.js",
   "/api/live/compile/route": "app/api/live/compile/route.js",
   "/api/live/universe/route": "app/api/live/universe/route.js",
   "/page": "app/page.js",

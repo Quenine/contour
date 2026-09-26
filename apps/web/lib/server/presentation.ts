@@ -4,6 +4,7 @@ import type { CompileTerminalPayoffRequest, CompileTerminalPayoffResult } from "
 import type { ChartPointDto, CompilationDto, FreshnessDto, TerminalMode } from "../presentation/types";
 import { freshnessState } from "./input";
 import { formatBtcPrice, formatUtc } from "../presentation/format";
+import type { ExecutionPlanResult } from "@contour/execution";
 
 const displayNumber = (value: DecimalAmount): number => Number(value.toString());
 const freshness = (value: { readonly observedAt: { readonly value: string }; readonly source: string; readonly network: string }, maximumAgeMs = 120_000): FreshnessDto => ({ state: freshnessState(value.observedAt.value, maximumAgeMs), observedAt: value.observedAt.value, source: value.source, network: value.network });
@@ -49,7 +50,18 @@ function identityFields(identity: PresentationIdentity): Pick<CompilationDto, "m
   return { mode: identity.mode, requestIdentity: identity.requestIdentity, ...(identity.marketContextIdentity ? { marketContextIdentity: identity.marketContextIdentity } : {}), ...(identity.marketSnapshotIdentity ? { marketSnapshotIdentity: identity.marketSnapshotIdentity } : {}) };
 }
 
-export function presentCompilerResult(request: CompileTerminalPayoffRequest, result: CompileTerminalPayoffResult, identity: PresentationIdentity): CompilationDto {
+function presentExecution(result: ExecutionPlanResult | undefined): CompilationDto["executionPreview"] {
+  if (!result) return undefined;
+  if (result.status === "NOT_NEEDED") return { status: result.status, blockers: [{ kind: "NOT_NEEDED", explanation: result.explanation }] };
+  if (result.status !== "READY") return { status: result.status, ...(result.snapshot ? { snapshotIdentity: result.snapshot.identity } : {}), blockers: result.blockers.map((blocker) => ({ kind: blocker.kind, explanation: "explanation" in blocker ? blocker.explanation : blocker.kind === "STALE_MARKET" ? `book age ${blocker.ageMs}ms exceeds ${blocker.maximumAllowedAgeMs}ms` : blocker.kind === "MARKET_CHANGED" ? "the compiler snapshot and current planning snapshot differ" : blocker.kind === "MIN_NOTIONAL_VIOLATION" ? `maximum segment notional ${blocker.maximumPossibleNotional} is below minimum ${blocker.minimumNotional}` : `planned ${blocker.requested} exceeds available ${blocker.available}` })) };
+  const plan = result.plan;
+  return { status: "READY", planIdentity: plan.identity, snapshotIdentity: plan.snapshot.identity, checkedAt: plan.freshness.checkedAt, maximumAgeMs: plan.freshness.maximumAgeMs, maximumAllowedAgeMs: plan.freshness.maximumAllowedAgeMs,
+    originalPremium: plan.originalCompiledPremium.toString(), executablePremium: plan.executableNormalizedPremium.toString(), budget: plan.budget.toString(), verificationPassed: plan.verification.holds,
+    worstCasePnl: plan.verification.worstCase.terminalPnl.toString(), worstCasePrice: plan.verification.worstCase.price.toString(), warnings: plan.report.warnings, reportText: plan.report.text,
+    orders: plan.orders.map((order) => ({ sequence: order.sequence, intentId: order.intentId, marketId: order.marketId, side: order.side, assetId: order.protocolAssetId, sourceBookLevel: order.sourceBookLevel, sourcePrice: order.sourcePrice.toString(), sourceAvailable: order.sourceAvailableQuantity.toString(), limitPrice: order.plannedPriceText, quantity: order.plannedQuantityText, notional: order.notional.toString(), szDecimals: order.precision.szDecimals, minimumNotional: order.minimumNotional.amount.toString(), protocolFee: order.protocolFee.kind, builderFee: order.builderFee.state })) };
+}
+
+export function presentCompilerResult(request: CompileTerminalPayoffRequest, result: CompileTerminalPayoffResult, identity: PresentationIdentity, execution?: ExecutionPlanResult): CompilationDto {
   const identified = identityFields(identity);
   if (result.status === "INVALID_REQUEST") return { ...identified, status: result.status, issues: result.issues, freshness: [] };
   if (result.status === "ALREADY_SATISFIED") return {
@@ -69,7 +81,7 @@ export function presentCompilerResult(request: CompileTerminalPayoffRequest, res
       return { marketId: position.marketId, statement: market ? `BTC ${market.comparator === "greaterThan" ? ">" : ">="} ${formatBtcPrice(market.threshold.toString())} at ${formatUtc(market.settlementAt.value)}` : "normalized binary outcome", side: position.side, quantity: position.totalQuantity.toString(), weightedAverage: { acquisitionCost: position.weightedAveragePrice.acquisitionCost.toString(), quantity: position.weightedAveragePrice.quantity.toString() }, acquisitionCost: position.acquisitionCost.toString(), estimatedFee: position.estimatedFee.toString() };
     }),
     executionSegments: result.executionSegments.map((segment) => ({ marketId: segment.marketId, side: segment.side, bookLevel: segment.bookLevel, bookPrice: segment.bookPrice.toString(), quantity: segment.quantity.toString(), available: segment.maximumAvailableAtSnapshot.toString(), acquisitionCost: segment.acquisitionCost.toString(), estimatedFee: segment.estimatedFee.toString() })),
-    freshness: result.marketSnapshots.map((snapshot) => freshness(snapshot)),
+    freshness: result.marketSnapshots.map((snapshot) => freshness(snapshot)), ...(execution ? { executionPreview: presentExecution(execution)! } : {}),
     chart: { points: chartSamples(request, result), strikes: request.instruments.map((instrument) => ({ price: displayNumber(instrument.market.threshold), label: `#${instrument.market.id}` })), floor: displayNumber(request.constraint.minimumTerminalPnl), protectedMin: displayNumber(request.settlement.priceRange.min), protectedMax: displayNumber(request.settlement.priceRange.max), note: "Visualization samples only. Exact settlement verification determines pass/fail." }
   };
 }

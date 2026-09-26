@@ -83,6 +83,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../app/api/fixture/execution/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/fixture/execution">> = Specific
+  const handler = {} as typeof import("../../app/api/fixture/execution/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../app/api/live/compile/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/live/compile">> = Specific

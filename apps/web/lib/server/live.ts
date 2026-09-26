@@ -3,9 +3,11 @@ import { assetSymbol, DecimalAmount, UtcTimestamp, type BinaryPriceOutcome } fro
 import { HyperliquidReader } from "@contour/hyperliquid";
 import type { PerpetualTerminalComponent } from "@contour/payoff";
 import type { CompilationDto, LiveUniverseDto, PublicAccountDto } from "../presentation/types";
-import { liveRequestFingerprint, marketSnapshotFingerprint, type LiveRequestFingerprintInput } from "../presentation/identity";
+import { liveRequestFingerprint, type LiveRequestFingerprintInput } from "../presentation/identity";
 import { freshnessState, minimumPnlFromInput, parseDecimalInput, validatePublicAddress } from "./input";
 import { presentCompilerResult } from "./presentation";
+import { executionSnapshot } from "@contour/execution";
+import { planLiveExecution } from "./execution";
 
 const reader = new HyperliquidReader();
 const btc = assetSymbol("BTC");
@@ -83,9 +85,7 @@ export async function compileLive(input: LiveCompileInput): Promise<CompilationD
     constraint: { minimumTerminalPnl: minimumPnlFromInput(input.constraintMode, input.constraintValue) }, maximumAcquisitionCost: parseDecimalInput(input.maximumBudget, "maximum acquisition budget"), instruments,
     policy: { maximumBookAgeMs: 120_000, compilationTime: UtcTimestamp.fromEpochMilliseconds(Date.now()), feeModel: { kind: "excluded" } }
   };
-  const marketSnapshotIdentity = marketSnapshotFingerprint(instruments.flatMap((instrument) => [
-    { marketId: instrument.market.id, side: "yes" as const, observedAt: instrument.yesBook.freshness.observedAt.value, source: instrument.yesBook.freshness.source, network: instrument.yesBook.freshness.network },
-    { marketId: instrument.market.id, side: "no" as const, observedAt: instrument.noBook.freshness.observedAt.value, source: instrument.noBook.freshness.source, network: instrument.noBook.freshness.network }
-  ]));
-  return presentCompilerResult(request, await compileTerminalPayoff(request), { mode: "live", requestIdentity, marketContextIdentity: input.marketContextIdentity, marketSnapshotIdentity });
+  const marketSnapshotIdentity = executionSnapshot(request).identity;
+  const result = await compileTerminalPayoff(request);
+  return presentCompilerResult(request, result, { mode: "live", requestIdentity, marketContextIdentity: input.marketContextIdentity, marketSnapshotIdentity }, planLiveExecution(request, result, requestIdentity));
 }

@@ -3,6 +3,7 @@
   "functions": {
     "/api/account": {},
     "/api/fixture/compile": {},
+    "/api/fixture/execution": {},
     "/api/live/compile": {},
     "/api/live/universe": {}
   }

@@ -3,6 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "build": "tsc -b", "probe:markets": "node dist/index.js markets", "probe:account": "node dist/index.js account", "probe:compiler:fixture": "node dist/compiler-fixture.js", "probe:compiler:live": "node dist/compiler-live.js" },
-  "dependencies": { "@contour/compiler": "workspace:*", "@contour/domain": "workspace:*", "@contour/hyperliquid": "workspace:*", "@contour/payoff": "workspace:*" }
+  "scripts": { "build": "tsc -b", "probe:markets": "node dist/index.js markets", "probe:account": "node dist/index.js account", "probe:compiler:fixture": "node dist/compiler-fixture.js", "probe:compiler:live": "node dist/compiler-live.js", "probe:execution:fixture": "node dist/execution-fixture.js", "probe:execution:live": "node dist/execution-live.js" },
+  "dependencies": { "@contour/compiler": "workspace:*", "@contour/domain": "workspace:*", "@contour/execution": "workspace:*", "@contour/hyperliquid": "workspace:*", "@contour/payoff": "workspace:*" }
 }
