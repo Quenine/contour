@@ -4,19 +4,24 @@
   "type": "module",
   "version": "0.0.0",
   "packageManager": "pnpm@11.15.1",
-  "engines": { "node": ">=22.12.0" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "build": "pnpm -r build",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "probe:markets": "pnpm --filter @contour/probe probe:markets",
-    "probe:account": "pnpm --filter @contour/probe probe:account"
+    "probe:account": "pnpm --filter @contour/probe probe:account",
+    "probe:compiler:fixture": "pnpm --filter @contour/probe probe:compiler:fixture",
+    "probe:compiler:live": "pnpm --filter @contour/probe probe:compiler:live"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/node": "^24.10.1",
     "eslint": "^9.39.1",
+    "fast-check": "^4.10.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.4",
     "vitest": "^4.0.8"

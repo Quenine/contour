@@ -27,4 +27,11 @@ describe("exact interval verification", () => {
     expect(result.holds).toBe(true);
   });
   it("rejects invalid ranges", () => expect(() => verifyTerminalPayoff({ components: [] }, { settlementPriceMin: d("2"), settlementPriceMax: d("1"), minimumPnl: d("0") })).toThrow(RangeError));
+  it("checks the interior one-sided states at strikes on interval endpoints", () => {
+    const noAtMin: BinaryTerminalComponent = { kind: "binary", comparator: "greaterThan", threshold: d("10"), side: "no", shares: d("5"), premium: d("0") };
+    const yesAtMax: BinaryTerminalComponent = { kind: "binary", comparator: "greaterThanOrEqual", threshold: d("20"), side: "yes", shares: d("7"), premium: d("0") };
+    const result = verifyTerminalPayoff({ components: [noAtMin, yesAtMax] }, { settlementPriceMin: d("10"), settlementPriceMax: d("20"), minimumPnl: d("0") });
+    expect(result.holds).toBe(true);
+    expect(result.evaluatedPoints.map((point) => `${point.price.toString()}:${point.position}`)).toEqual(["10:exact", "10:rightLimit", "20:leftLimit", "20:exact"]);
+  });
 });

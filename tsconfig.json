@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/domain" },
+    { "path": "packages/compiler" },
     { "path": "packages/hyperliquid" },
     { "path": "packages/payoff" },
     { "path": "apps/probe" }

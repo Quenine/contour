@@ -1,6 +1,6 @@
-import { DecimalAmount, type Comparator, type Direction, type OutcomeSide, type Price, type Quantity } from "@contour/domain";
+import { DecimalAmount, type AssetSymbol, type Comparator, type Direction, type OutcomeSide, type Price, type Quantity } from "@contour/domain";
 
-export interface PerpetualTerminalComponent { readonly kind: "perpetual"; readonly direction: Direction; readonly quantity: Quantity; readonly entryPrice: Price; readonly externalTerms: "excluded"; }
+export interface PerpetualTerminalComponent { readonly kind: "perpetual"; readonly asset?: AssetSymbol; readonly direction: Direction; readonly quantity: Quantity; readonly entryPrice: Price; readonly externalTerms: "excluded"; }
 export interface BinaryTerminalComponent { readonly kind: "binary"; readonly comparator: Comparator; readonly threshold: Price; readonly side: OutcomeSide; readonly shares: Quantity; readonly premium: DecimalAmount; }
 export type TerminalPayoffComponent = PerpetualTerminalComponent | BinaryTerminalComponent;
 export interface TerminalPortfolio { readonly components: readonly TerminalPayoffComponent[]; }
