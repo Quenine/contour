@@ -39,6 +39,18 @@ const common = (result: Exclude<CompileTerminalPayoffResult, { status: "INVALID_
   maximumAcquisitionCost: result.maximumAcquisitionCost.toString()
 });
 
+function liveMarketDiagnostics(request: CompileTerminalPayoffRequest): NonNullable<CompilationDto["liveMarketDiagnostics"]> {
+  const observations = request.instruments.flatMap((instrument) => [instrument.yesBook.freshness.observedAt.value, instrument.noBook.freshness.observedAt.value]);
+  if (observations.length === 0) return { eligibleMarkets: 0, eligibleMarketIds: [], yesAskLevels: 0, noAskLevels: 0, oldestBookObservation: request.policy.compilationTime.value };
+  return {
+    eligibleMarkets: request.instruments.length,
+    eligibleMarketIds: request.instruments.map((instrument) => instrument.market.id),
+    yesAskLevels: request.instruments.reduce((sum, instrument) => sum + instrument.yesBook.asks.length, 0),
+    noAskLevels: request.instruments.reduce((sum, instrument) => sum + instrument.noBook.asks.length, 0),
+    oldestBookObservation: observations.reduce((oldest, current) => Date.parse(current) < Date.parse(oldest) ? current : oldest)
+  };
+}
+
 export interface PresentationIdentity {
   readonly mode: TerminalMode;
   readonly requestIdentity: string;
@@ -69,7 +81,7 @@ export function presentCompilerResult(request: CompileTerminalPayoffRequest, res
     verification: { passed: result.verification.holds, worstCasePnl: result.verification.worstCase.terminalPnl.toString(), worstCasePrice: result.verification.worstCase.price.toString(), worstCasePosition: result.verification.worstCase.position, boundaryStateCount: result.verification.evaluatedPoints.length, points: result.verification.evaluatedPoints.map((point) => ({ price: point.price.toString(), position: point.position, pnl: point.terminalPnl.toString() })) },
     selectedPositions: [], executionSegments: [], freshness: []
   };
-  if (result.status === "INFEASIBLE") return { ...identified, status: result.status, ...common(result), infeasibility: { reason: result.reason, explanation: result.explanation, ...(result.minimumAcquisitionCost ? { minimumRequiredBudget: result.minimumAcquisitionCost.toString() } : {}) }, freshness: [] };
+  if (result.status === "INFEASIBLE") return { ...identified, status: result.status, ...common(result), infeasibility: { reason: result.reason, explanation: result.explanation, ...(result.minimumAcquisitionCost ? { minimumRequiredBudget: result.minimumAcquisitionCost.toString() } : {}) }, freshness: [], ...(identity.mode === "live" ? { liveMarketDiagnostics: liveMarketDiagnostics(request) } : {}) };
   if (result.status === "SOLVER_FAILURE") return { ...identified, status: result.status, ...common(result), explanation: `${result.solverStatus}: ${result.explanation}`, freshness: [] };
   if (result.status === "VERIFICATION_FAILED") return { ...identified, status: result.status, ...common(result), explanation: result.explanation, executionSegments: result.executionSegments.map((segment) => ({ marketId: segment.marketId, side: segment.side, bookLevel: segment.bookLevel, bookPrice: segment.bookPrice.toString(), quantity: segment.quantity.toString(), available: segment.maximumAvailableAtSnapshot.toString(), acquisitionCost: segment.acquisitionCost.toString(), estimatedFee: segment.estimatedFee.toString() })), freshness: [] };
   const verification = result.verification;

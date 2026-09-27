@@ -4,11 +4,23 @@ import { formatExecutionEvidence } from "./evidence-format.js";
 
 const INFO = "https://api.hyperliquid.xyz/info";
 const observedAt = UtcTimestamp.fromEpochMilliseconds(Date.now());
+const READ_TIMEOUT_MS = 8_000;
+
+class EvidenceReadError extends Error {
+  constructor(readonly category: "Timeout" | "Http" | "Network" | "InvalidPayload", message: string) { super(message); this.name = "EvidenceReadError"; }
+}
 
 async function info<T>(body: Readonly<Record<string, unknown>>): Promise<T> {
-  const response = await fetch(INFO, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (!response.ok) throw new Error(`Hyperliquid info ${String(body.type)}: HTTP ${response.status}`);
-  return response.json() as Promise<T>;
+  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
+  try {
+    const response = await fetch(INFO, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(body), cache: "no-store", signal: controller.signal });
+    if (!response.ok) throw new EvidenceReadError("Http", `Hyperliquid info ${String(body.type)}: HTTP ${response.status}`);
+    try { return await response.json() as T; } catch { throw new EvidenceReadError("InvalidPayload", `Hyperliquid info ${String(body.type)} returned invalid JSON`); }
+  } catch (error) {
+    if (error instanceof EvidenceReadError) throw error;
+    if (controller.signal.aborted) throw new EvidenceReadError("Timeout", `Hyperliquid info ${String(body.type)} exceeded ${READ_TIMEOUT_MS}ms`);
+    throw new EvidenceReadError("Network", `Hyperliquid info ${String(body.type)} failed`);
+  } finally { clearTimeout(timeout); }
 }
 
 interface OutcomeRow { readonly outcome: number; readonly description?: string; readonly sideSpecs?: readonly Readonly<Record<string, unknown>>[]; readonly [key: string]: unknown }

@@ -5,6 +5,14 @@ import { HyperliquidReader } from "@contour/hyperliquid";
 import type { PerpetualTerminalComponent } from "@contour/payoff";
 
 const d = (value: string) => DecimalAmount.parse(value); const reader = new HyperliquidReader(); const btc = assetSymbol("BTC");
+
+async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length); let nextIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) { const index = nextIndex++; if (index >= items.length) return; results[index] = await work(items[index]!); }
+  }));
+  return results;
+}
 console.log("CONTOUR EXECUTION — LIVE READ-ONLY DRY RUN");
 const [perp, outcomes] = await Promise.all([reader.btcPerpetual(), reader.outcomeMarkets()]);
 const binaries = outcomes.filter((outcome): outcome is BinaryPriceOutcome => outcome.kind === "binaryPrice" && outcome.underlying === btc);
@@ -12,7 +20,7 @@ const groups = new Map<string, BinaryPriceOutcome[]>(); for (const market of bin
 const selected = [...groups.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))[0];
 if (!selected) console.log("Status: COMPILER_INFEASIBLE — no future exact-settlement BTC binary group is available");
 else {
-  const markets = selected[1].slice(0, 12); const instruments: ExecutableBinaryInstrument[] = await Promise.all(markets.map(async (market) => { const [yesBook, noBook] = await Promise.all([reader.outcomeOrderBook(market.id, 0), reader.outcomeOrderBook(market.id, 1)]); return { market, yesBook, noBook }; }));
+  const markets = selected[1].slice(0, 12); const instruments = await mapWithConcurrency(markets, 3, async (market): Promise<ExecutableBinaryInstrument> => { const [yesBook, noBook] = await Promise.all([reader.outcomeOrderBook(market.id, 0), reader.outcomeOrderBook(market.id, 1)]); return { market, yesBook, noBook }; });
   const existing: PerpetualTerminalComponent = { kind: "perpetual", asset: btc, direction: "long", quantity: d("0.01"), entryPrice: perp.markPrice, externalTerms: "excluded" }; const checkedAt = UtcTimestamp.fromEpochMilliseconds(Date.now());
   const request: CompileTerminalPayoffRequest = { existingPortfolio: { components: [existing] }, settlement: { underlying: btc, timestamp: markets[0]!.settlementAt, priceRange: { min: perp.markPrice.subtract(d("5000")), max: perp.markPrice.add(d("5000")) } }, constraint: { minimumTerminalPnl: d("-20") }, maximumAcquisitionCost: d("50"), instruments, policy: { maximumBookAgeMs: 120_000, compilationTime: checkedAt, feeModel: { kind: "excluded" } } };
   const compiled = await compileTerminalPayoff(request); console.log(`Settlement: ${selected[0]}; markets: ${markets.length}; compiler: ${compiled.status}`);

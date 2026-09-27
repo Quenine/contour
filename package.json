@@ -13,6 +13,8 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "dev": "pnpm --filter @contour/web dev",
+    "start": "pnpm --filter @contour/web start",
+    "smoke:production": "node scripts/smoke-production.mjs",
     "probe:markets": "pnpm --filter @contour/probe probe:markets",
     "probe:account": "pnpm --filter @contour/probe probe:account",
     "probe:compiler:fixture": "pnpm --filter @contour/probe probe:compiler:fixture",

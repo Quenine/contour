@@ -13,6 +13,14 @@ for (const market of binaries) groups.set(market.settlementAt.value, [...(groups
 const now = Date.now();
 const selectedGroup = [...groups.entries()].filter(([timestamp]) => Date.parse(timestamp) > now).sort((left, right) => right[1].length - left[1].length || left[0].localeCompare(right[0]))[0];
 
+async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length); let nextIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) { const index = nextIndex++; if (index >= items.length) return; results[index] = await work(items[index]!); }
+  }));
+  return results;
+}
+
 console.log("CONTOUR COMPILER — LIVE READ-ONLY");
 console.log(`Network: ${perp.freshness.network}; BTC mark ${perp.markPrice.toString()}; oracle ${perp.oraclePrice.toString()}`);
 console.log(`Current normalized BTC binary universe: ${binaries.length}; settlement groups: ${groups.size}`);
@@ -22,10 +30,10 @@ if (!selectedGroup) {
 } else {
   const [timestamp, markets] = selectedGroup;
   const selectedMarkets = markets.slice(0, 12);
-  const executable: ExecutableBinaryInstrument[] = await Promise.all(selectedMarkets.map(async (market) => {
+  const executable = await mapWithConcurrency(selectedMarkets, 3, async (market): Promise<ExecutableBinaryInstrument> => {
     const [yesBook, noBook] = await Promise.all([reader.outcomeOrderBook(market.id, 0), reader.outcomeOrderBook(market.id, 1)]);
     return { market, yesBook, noBook };
-  }));
+  });
   const synthetic: PerpetualTerminalComponent = { kind: "perpetual", asset: btc, direction: "long", quantity: d("0.01"), entryPrice: perp.markPrice, externalTerms: "excluded" };
   const rangeMin = perp.markPrice.subtract(d("5000")); const rangeMax = perp.markPrice.add(d("5000"));
   const compileTime = UtcTimestamp.fromEpochMilliseconds(Date.now());
