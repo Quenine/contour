@@ -9,6 +9,7 @@ import type { CompilationDto, LiveUniverseDto, PublicAccountDto, TerminalMode } 
 import { PayoffChart } from "./payoff-chart";
 import { ResultPanels } from "./result-panels";
 import { StatusPill } from "./status-pill";
+import { apiErrorMessage } from "../lib/presentation/api-error";
 
 type Progress = "not compiled" | "inputs changed" | "validating" | "fetching market depth" | "compiling" | "verifying" | "feasible" | "already satisfied" | "infeasible" | "invalid request" | "live data unavailable" | "service unavailable" | "verification failure" | "solver failure";
 const stateForResult = (status: CompilationDto["status"]): Progress => ({ FEASIBLE: "feasible", ALREADY_SATISFIED: "already satisfied", INFEASIBLE: "infeasible", INVALID_REQUEST: "invalid request", VERIFICATION_FAILED: "verification failure", SOLVER_FAILURE: "solver failure" } as const)[status];
@@ -19,7 +20,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
   let body: unknown;
   try { body = await response.json(); } catch { throw new Error("The server returned an unreadable response. Please try again."); }
-  if (!response.ok) throw new ApiRequestError(typeof body === "object" && body !== null && "error" in body && typeof body.error === "string" ? body.error : "request failed", response.status);
+  if (!response.ok) throw new ApiRequestError(apiErrorMessage(body), response.status);
   return body as T;
 }
 

@@ -1,3 +1,5 @@
+import { evidenceSnapshotIdentity } from "@contour/execution";
+
 export type CompileMode = "fixture" | "live";
 
 export interface LiveRequestFingerprintInput {
@@ -40,7 +42,11 @@ export function liveRequestFingerprint(input: LiveRequestFingerprintInput): stri
 }
 
 export function marketContextFingerprint(freshness: { readonly observedAt?: string; readonly source?: string; readonly network?: string } | undefined): string {
-  return `contour-market-context-v1:${JSON.stringify(canonicalize(freshness ?? {}))}`;
+  // Only freshness provenance binds the live context; display state and labels do not.
+  const context = { observedAt: freshness?.observedAt, source: freshness?.source, network: freshness?.network };
+  const digest = evidenceSnapshotIdentity(canonicalize(context)).split(":").at(-1);
+  if (!digest) throw new Error("market context identity could not be generated");
+  return `contour-market-context-v2:${digest}`;
 }
 
 export function marketSnapshotFingerprint(snapshots: readonly { readonly marketId: string; readonly side: "yes" | "no"; readonly observedAt: string; readonly source: string; readonly network: string }[]): string {

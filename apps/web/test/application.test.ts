@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { compileTerminalPayoff, type CompileTerminalPayoffResult } from "@contour/compiler";
 import { DecimalAmount } from "@contour/domain";
 import { invalidatedCompileState } from "../lib/presentation/compile-state.js";
+import { apiErrorMessage } from "../lib/presentation/api-error.js";
 import { formatMoney, formatUtc } from "../lib/presentation/format.js";
 import { VERIFIED_FIXTURE, verifiedFixtureRequestIdentity } from "../lib/presentation/fixture-profile.js";
 import { isResultCurrent, liveRequestFingerprint, marketContextFingerprint, type ActiveRequestIdentity, type LiveRequestFingerprintInput, type ResultRequestIdentity } from "../lib/presentation/identity.js";
@@ -21,6 +22,7 @@ const fixtureIdentity = { mode: "fixture" as const, requestIdentity: verifiedFix
 const liveInput = (overrides: Partial<LiveRequestFingerprintInput> = {}): LiveRequestFingerprintInput => ({ mode: "live", exposure: { source: "synthetic", direction: "long", quantity: "0.01", entryPrice: "80000" }, settlementTimestamp: "2026-10-02T00:00:00.000Z", minimumPrice: "70000", maximumPrice: "90000", constraintMode: "minimumPnl", constraintValue: "-500", maximumBudget: "100", feeTreatment: "excluded", ...overrides });
 const liveActive = (input = liveInput(), observedAt = "2026-09-26T00:00:00.000Z"): ActiveRequestIdentity => ({ mode: "live", requestIdentity: liveRequestFingerprint(input), marketContextIdentity: marketContextFingerprint({ observedAt, source: "hyperliquid-direct", network: "mainnet" }) });
 const resultFor = (active: ActiveRequestIdentity): ResultRequestIdentity => ({ ...active, ...(active.mode === "live" ? { marketSnapshotIdentity: "exact-book-snapshot" } : {}) });
+const liveCompileBody = (marketContextIdentity: string) => ({ settlementTimestamp: "2026-10-02T00:00:00.000Z", minimumPrice: "55000", maximumPrice: "85000", constraintMode: "maximumLoss", constraintValue: "100", maximumBudget: "400", marketContextIdentity, exposure: { source: "synthetic", direction: "long", quantity: "0.01", entryPrice: "84757" } });
 
 describe("web orchestration", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -41,6 +43,18 @@ describe("web orchestration", () => {
     expect(parsed.exposure.source).toBe("synthetic");
     expect(() => parseLiveCompileInput({ exposure: { source: "account", address: "nope", positionIndex: 0 } })).toThrow();
     expect(() => parseLiveCompileInput({ settlementTimestamp: "2026-10-02T00:00:00.000Z", minimumPrice: "70000", maximumPrice: "90000", constraintMode: "minimumPnl", constraintValue: "-500", maximumBudget: "100", marketContextIdentity: "context", exposure: { source: "synthetic", direction: "long", quantity: "x".repeat(81), entryPrice: "80000" } })).toThrow();
+  });
+  it("accepts a generated compact market-context identity and rejects values over the public bound", () => {
+    const identity = marketContextFingerprint({ observedAt: "2026-10-02T00:00:00.000Z", source: "hyperliquid-direct", network: "mainnet" });
+    expect(identity.length).toBeLessThanOrEqual(128);
+    expect(parseLiveCompileInput(liveCompileBody(identity)).marketContextIdentity).toBe(identity);
+    expect(() => parseLiveCompileInput(liveCompileBody("x".repeat(129)))).toThrow();
+  });
+  it("returns safe API error text and validation issues instead of hiding them", () => {
+    expect(apiErrorMessage({ error: "Live compile failed safely" })).toBe("Live compile failed safely");
+    expect(apiErrorMessage({ issues: ["market context is stale"] })).toBe("market context is stale");
+    expect(apiErrorMessage({ issues: [null, "quantity is invalid"] })).toBe("quantity is invalid");
+    expect(apiErrorMessage({ error: 42, issues: "malformed" })).toBe("request failed");
   });
   it("rejects oversized and non-JSON public request bodies", async () => {
     await expect(readJsonBounded(new Request("https://contour.invalid", { method: "POST", headers: { "content-type": "text/plain" }, body: "{}" }))).rejects.toThrow("content-type");
@@ -118,6 +132,23 @@ describe("compile result identity and invalidation", () => {
     const first = liveRequestFingerprint(liveInput()); const second = liveRequestFingerprint(liveInput());
     expect(first).toBe(second); expect(first).not.toBe(liveRequestFingerprint(liveInput({ maximumBudget: "101" })));
     expect(first).toBe(liveRequestFingerprint({ ...liveInput() }));
+  });
+  it("creates a compact deterministic market-context identity from freshness inputs only", () => {
+    const context = { observedAt: "2026-10-02T00:00:00.000Z", source: "hyperliquid-direct", network: "mainnet" };
+    const first = marketContextFingerprint(context);
+    expect(first).toBe(marketContextFingerprint(context));
+    expect(first).toMatch(/^contour-market-context-v2:[0-9a-f]{16}$/);
+    expect(first.length).toBeLessThanOrEqual(128);
+    expect(first).not.toBe(marketContextFingerprint({ ...context, observedAt: "2026-10-02T00:00:01.000Z" }));
+    expect(first).not.toBe(marketContextFingerprint({ ...context, network: "testnet" }));
+    expect(first).not.toBe(marketContextFingerprint({ ...context, source: "other-source" }));
+    expect(first).toBe(marketContextFingerprint({ ...context, state: "STALE", displayLabel: "changed" }));
+  });
+  it("keeps a result current when its generated compact live context identity is unchanged", () => {
+    const context = { observedAt: "2026-10-02T00:00:00.000Z", source: "hyperliquid-direct", network: "mainnet" };
+    const active: ActiveRequestIdentity = { mode: "live", requestIdentity: liveRequestFingerprint(liveInput()), marketContextIdentity: marketContextFingerprint(context) };
+    expect(isResultCurrent(resultFor(active), { ...active })).toBe(true);
+    expect(isResultCurrent(resultFor(active), { ...active, marketContextIdentity: marketContextFingerprint({ ...context, observedAt: "2026-10-02T00:00:01.000Z" }) })).toBe(false);
   });
   it("does not render a compiled chart/result when its request identity mismatches", () => {
     const original = liveActive(); const changed = liveActive(liveInput({ maximumPrice: "91000" })); expect(isResultCurrent(resultFor(original), changed)).toBe(false);
