@@ -61,6 +61,7 @@ export interface CompilationDto {
   readonly executionSegments?: readonly ExecutionSegmentDto[];
   readonly executionPreview?: ExecutionPreviewDto;
   readonly infeasibility?: { readonly reason: string; readonly explanation: string; readonly minimumRequiredBudget?: string };
+  readonly verificationFailure?: { readonly reasons: readonly string[]; readonly worstCasePrice?: string; readonly worstCasePosition?: string; readonly worstCasePnl?: string; readonly requestedFloor?: string; readonly exactDeficit?: string };
   readonly issues?: readonly string[];
   readonly explanation?: string;
   readonly freshness: readonly FreshnessDto[];

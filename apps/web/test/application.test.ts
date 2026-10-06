@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { compileTerminalPayoff, type CompileTerminalPayoffResult } from "@contour/compiler";
 import { DecimalAmount } from "@contour/domain";
+import { verifyTerminalPayoff } from "@contour/payoff";
 import { invalidatedCompileState } from "../lib/presentation/compile-state.js";
 import { apiErrorMessage } from "../lib/presentation/api-error.js";
 import { formatMoney, formatUtc } from "../lib/presentation/format.js";
@@ -104,8 +105,10 @@ describe("web orchestration", () => {
     expect(liveInfeasible.liveMarketDiagnostics).toMatchObject({ eligibleMarkets: 3, eligibleMarketIds: ["101", "102", "103"], yesAskLevels: 3, noAskLevels: 4 });
   });
   it("maps verification failure as a persistent non-success presentation", () => {
-    const request = createFixtureRequest(); const failed: CompileTerminalPayoffResult = { status: "VERIFICATION_FAILED", underlying: request.settlement.underlying, settlementTimestamp: request.settlement.timestamp, requestedPriceRange: request.settlement.priceRange, minimumTerminalPnl: request.constraint.minimumTerminalPnl, maximumAcquisitionCost: request.maximumAcquisitionCost, explanation: "exact verifier rejected reconstructed candidate", executionSegments: [], diagnostics: { solver: "HiGHS 1.15", solverStatus: "Optimal", solverFeasibilityTolerance: "1e-7 (solver only)", candidateDecimalPlaces: 12, exactPostSolveVerification: true } };
-    expect(presentCompilerResult(request, failed, fixtureIdentity)).toMatchObject({ status: "VERIFICATION_FAILED", explanation: "exact verifier rejected reconstructed candidate" });
+    const request = createFixtureRequest(); const verification = verifyTerminalPayoff(request.existingPortfolio, { settlementPriceMin: request.settlement.priceRange.min, settlementPriceMax: request.settlement.priceRange.max, minimumPnl: request.constraint.minimumTerminalPnl });
+    const deficit = request.constraint.minimumTerminalPnl.subtract(verification.worstCase.terminalPnl);
+    const failed: CompileTerminalPayoffResult = { status: "VERIFICATION_FAILED", underlying: request.settlement.underlying, settlementTimestamp: request.settlement.timestamp, requestedPriceRange: request.settlement.priceRange, minimumTerminalPnl: request.constraint.minimumTerminalPnl, maximumAcquisitionCost: request.maximumAcquisitionCost, failureReasons: ["PAYOFF_FAILED"], exactDeficit: deficit, verification, explanation: "exact verifier rejected reconstructed candidate", executionSegments: [], diagnostics: { solver: "HiGHS 1.15", solverStatus: "Optimal", solverFeasibilityTolerance: "1e-7 (solver only)", candidateDecimalPlaces: 12, repairMaximumDecimalPlaces: 15, exactPostSolveVerification: true } };
+    expect(presentCompilerResult(request, failed, fixtureIdentity)).toMatchObject({ status: "VERIFICATION_FAILED", explanation: "exact verifier rejected reconstructed candidate", verificationFailure: { reasons: ["PAYOFF_FAILED"], worstCasePnl: verification.worstCase.terminalPnl.toString(), requestedFloor: request.constraint.minimumTerminalPnl.toString(), exactDeficit: deficit.toString() } });
   });
   it("maps freshness without relying on chart samples for verification", () => {
     expect(freshnessState("2026-01-01T00:00:00.000Z", 1, Date.parse("2026-01-01T00:00:00.001Z"))).toBe("LIVE"); expect(freshnessState("2026-01-01T00:00:00.000Z", 1, Date.parse("2026-01-01T00:00:00.002Z"))).toBe("STALE"); expect(freshnessState(undefined, 1)).toBe("UNAVAILABLE");

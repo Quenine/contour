@@ -1,8 +1,8 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { assetSymbol, DecimalAmount, outcomeId, UtcTimestamp, type BinaryPriceOutcome, type MarketFreshness, type OrderBookSnapshot } from "@contour/domain";
-import { verifyTerminalPayoff, type PerpetualTerminalComponent } from "@contour/payoff";
-import { compileTerminalPayoff, type CompileTerminalPayoffRequest, type ExecutableBinaryInstrument } from "../src/index.js";
+import { verifyTerminalPayoff, type BinaryTerminalComponent, type PerpetualTerminalComponent } from "@contour/payoff";
+import { compileTerminalPayoff, contributionAtState, solveProblem, validateCompileRequest, type CompileTerminalPayoffRequest, type ExecutableBinaryInstrument } from "../src/index.js";
 
 const d = (value: string) => DecimalAmount.parse(value);
 const BTC = assetSymbol("BTC");
@@ -34,6 +34,26 @@ function request(overrides: Partial<CompileTerminalPayoffRequest> = {}): Compile
     policy: { maximumBookAgeMs: 60_000, compilationTime: UtcTimestamp.parse("2026-10-01T00:00:00Z"), feeModel: { kind: "excluded" } },
     ...overrides
   };
+}
+
+function liveGeometry(): CompileTerminalPayoffRequest {
+  const settlement = UtcTimestamp.parse("2026-10-05T08:00:00.000Z");
+  const observed: MarketFreshness = { ...freshness, observedAt: UtcTimestamp.parse("2026-10-05T07:59:30.000Z") };
+  return request({
+    existingPortfolio: { components: [longPerp("84725", "0.01")] },
+    settlement: { underlying: BTC, timestamp: settlement, priceRange: { min: d("55000"), max: d("85000") } },
+    constraint: { minimumTerminalPnl: d("-290") }, maximumAcquisitionCost: d("400"),
+    instruments: [instrument("5372", "65000", [], [["0.28", "10"]], { settlement, observed }), instrument("5376", "75000", [], [["0.94", "10"]], { settlement, observed })],
+    policy: { maximumBookAgeMs: 60_000, compilationTime: settlement, feeModel: { kind: "excluded" } }
+  });
+}
+
+function portfolioFromSegments(input: CompileTerminalPayoffRequest, segments: readonly { readonly marketId: string; readonly side: "yes" | "no"; readonly quantity: DecimalAmount; readonly acquisitionCost: DecimalAmount; readonly estimatedFee: DecimalAmount }[]) {
+  const overlay: BinaryTerminalComponent[] = segments.map((segment) => {
+    const market = input.instruments.find((instrument) => instrument.market.id === segment.marketId)!.market;
+    return { kind: "binary", side: segment.side, comparator: market.comparator, threshold: market.threshold, shares: segment.quantity, premium: segment.acquisitionCost.add(segment.estimatedFee) };
+  });
+  return { components: [...input.existingPortfolio.components, ...overlay] };
 }
 
 describe("Contour compiler", () => {
@@ -149,6 +169,134 @@ describe("compiler properties", () => {
       const sum = result.executionSegments.reduce((total, segment) => total.add(segment.acquisitionCost), DecimalAmount.zero);
       expect(sum.toString()).toBe(result.totalAcquisitionCost.toString());
     }), { seed: 20261001, numRuns: 20 });
+  });
+});
+
+describe("exact decimal reconstruction", () => {
+  it("reproduces the live boundary deficit offline and repairs the exact portfolio", async () => {
+    const input = liveGeometry();
+    const validated = validateCompileRequest(input);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    const solved = await solveProblem(validated.problem, true);
+    expect(solved.kind).toBe("optimal");
+    if (solved.kind !== "optimal") return;
+    const columns = (solved.result as unknown as { Columns: Record<string, { Primal: number }> }).Columns;
+    const first = d(columns.x_0_no_0!.Primal.toFixed(12));
+    const second = d(columns.x_1_no_0!.Primal.toFixed(12));
+    expect(first.toString()).toBe("10");
+    expect(second.toString()).toBe("0.833333333333");
+    const naiveSegments = [{ marketId: "5372", side: "no" as const, quantity: first, acquisitionCost: d("0.28").multiply(first), estimatedFee: d("0") }, { marketId: "5376", side: "no" as const, quantity: second, acquisitionCost: d("0.94").multiply(second), estimatedFee: d("0") }];
+    const naive = verifyTerminalPayoff(portfolioFromSegments(input, naiveSegments), { settlementPriceMin: input.settlement.priceRange.min, settlementPriceMax: input.settlement.priceRange.max, minimumPnl: input.constraint.minimumTerminalPnl });
+    expect(naive.holds).toBe(false);
+    expect(naive.worstCase.price.toString()).toBe("55000");
+    expect(naive.worstCase.terminalPnl.toString()).toBe("-290.00000000000002");
+    expect(input.constraint.minimumTerminalPnl.subtract(naive.worstCase.terminalPnl).toString()).toBe("0.00000000000002");
+    expect(naiveSegments.reduce((sum, segment) => sum.add(segment.acquisitionCost), d("0")).compare(input.maximumAcquisitionCost)).toBeLessThan(0);
+    expect(first.compare(d("10"))).toBeLessThanOrEqual(0);
+    expect(second.compare(d("10"))).toBeLessThanOrEqual(0);
+    const exactNearby = [...naiveSegments.slice(0, 1), { ...naiveSegments[1]!, quantity: d("0.833333333334"), acquisitionCost: d("0.94").multiply(d("0.833333333334")) }];
+    expect(verifyTerminalPayoff(portfolioFromSegments(input, exactNearby), { settlementPriceMin: input.settlement.priceRange.min, settlementPriceMax: input.settlement.priceRange.max, minimumPnl: input.constraint.minimumTerminalPnl }).holds).toBe(true);
+    const result = await compileTerminalPayoff(input);
+    expect(result.status).toBe("FEASIBLE");
+    if (result.status !== "FEASIBLE") return;
+    expect(result.verification.holds).toBe(true);
+    expect(verifyTerminalPayoff(portfolioFromSegments(input, result.executionSegments), { settlementPriceMin: input.settlement.priceRange.min, settlementPriceMax: input.settlement.priceRange.max, minimumPnl: input.constraint.minimumTerminalPnl }).holds).toBe(true);
+    expect(result.executionSegments.every((segment) => !segment.quantity.isNegative() && segment.quantity.compare(segment.maximumAvailableAtSnapshot) <= 0)).toBe(true);
+    expect(result.totalAcquisitionCost.add(result.estimatedFees).compare(input.maximumAcquisitionCost)).toBeLessThanOrEqual(0);
+  });
+
+  it("accounts for a binary that helps one state and harms another", () => {
+    const validated = validateCompileRequest(liveGeometry());
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    const no = validated.problem.segments[0]!;
+    const low = validated.problem.states.find((state) => state.price.toString() === "55000")!;
+    const high = validated.problem.states.find((state) => state.price.toString() === "85000")!;
+    expect(contributionAtState(no, low).compare(d("0"))).toBeGreaterThan(0);
+    expect(contributionAtState(no, high).compare(d("0"))).toBeLessThan(0);
+  });
+
+  it("repairs two opposing boundary constraints without assuming one-sided rounding", async () => {
+    const input = request({ existingPortfolio: { components: [] }, constraint: { minimumTerminalPnl: d("0.2") }, maximumAcquisitionCost: d("1"), instruments: [instrument("10", "50", [], [["0.2", "1"]]), instrument("11", "50", [["0.2", "1"]], [])] });
+    const validated = validateCompileRequest(input);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    const low = validated.problem.states.find((state) => state.price.toString() === "0")!;
+    const high = validated.problem.states.find((state) => state.price.toString() === "100")!;
+    const no = validated.problem.segments.find((segment) => segment.side === "no")!;
+    expect(contributionAtState(no, low).compare(d("0"))).toBeGreaterThan(0);
+    expect(contributionAtState(no, high).compare(d("0"))).toBeLessThan(0);
+    const roundedDown = d("0.333333333333");
+    const naiveSegments = [{ marketId: "10", side: "no" as const, quantity: roundedDown, acquisitionCost: d("0.2").multiply(roundedDown), estimatedFee: d("0") }, { marketId: "11", side: "yes" as const, quantity: roundedDown, acquisitionCost: d("0.2").multiply(roundedDown), estimatedFee: d("0") }];
+    const constraint = { settlementPriceMin: input.settlement.priceRange.min, settlementPriceMax: input.settlement.priceRange.max, minimumPnl: input.constraint.minimumTerminalPnl };
+    expect(verifyTerminalPayoff(portfolioFromSegments(input, naiveSegments), constraint).holds).toBe(false);
+    const oneSided = [{ ...naiveSegments[0]!, quantity: d("0.333333333334"), acquisitionCost: d("0.2").multiply(d("0.333333333334")) }, naiveSegments[1]!];
+    const beforeHigh = verifyTerminalPayoff(portfolioFromSegments(input, naiveSegments), constraint).evaluatedPoints.find((point) => point.price.toString() === "100")!.terminalPnl;
+    const afterHigh = verifyTerminalPayoff(portfolioFromSegments(input, oneSided), constraint).evaluatedPoints.find((point) => point.price.toString() === "100")!.terminalPnl;
+    expect(afterHigh.compare(beforeHigh)).toBeLessThan(0);
+    expect(verifyTerminalPayoff(portfolioFromSegments(input, oneSided), constraint).holds).toBe(false);
+    const result = await compileTerminalPayoff(input);
+    expect(result.status).toBe("FEASIBLE");
+    if (result.status !== "FEASIBLE") return;
+    expect(result.executionSegments).toHaveLength(2);
+    expect(result.executionSegments.every((segment) => segment.quantity.compare(roundedDown) > 0)).toBe(true);
+    expect(verifyTerminalPayoff(portfolioFromSegments(input, result.executionSegments), constraint).holds).toBe(true);
+  });
+
+  it.each([["1/3", "-0.75"], ["2/3", "-0.5"], ["5/6", "-0.375"]])("exact-verifies a repeating-fraction %s boundary", async (_fraction, floor) => {
+    const input = request({ existingPortfolio: { components: [longPerp("1", "1")] }, settlement: { underlying: BTC, timestamp: T, priceRange: { min: d("0"), max: d("2") } }, constraint: { minimumTerminalPnl: d(floor) }, maximumAcquisitionCost: d("1"), instruments: [instrument("12", "1", [], [["0.25", "1"]])] });
+    const result = await compileTerminalPayoff(input);
+    expect(result.status).toBe("FEASIBLE");
+    if (result.status !== "FEASIBLE") return;
+    expect(verifyTerminalPayoff(portfolioFromSegments(input, result.executionSegments), { settlementPriceMin: d("0"), settlementPriceMax: d("2"), minimumPnl: d(floor) }).holds).toBe(true);
+    expect(result.executionSegments.every((segment) => !segment.quantity.isNegative() && segment.quantity.compare(segment.maximumAvailableAtSnapshot) <= 0)).toBe(true);
+  });
+
+  it("does not spend beyond a tight budget or exceed depth to repair the live geometry", async () => {
+    const input = liveGeometry();
+    const tooSmallBudget = await compileTerminalPayoff({ ...input, maximumAcquisitionCost: d("3.58") });
+    expect(tooSmallBudget).toMatchObject({ status: "INFEASIBLE", reason: "BUDGET_TOO_LOW" });
+    const nearExactBudget = await compileTerminalPayoff({ ...input, maximumAcquisitionCost: d("3.58333333333335") });
+    expect(nearExactBudget.status).toBe("FEASIBLE");
+    if (nearExactBudget.status === "FEASIBLE") expect(nearExactBudget.totalAcquisitionCost.add(nearExactBudget.estimatedFees).compare(d("3.58333333333335"))).toBeLessThanOrEqual(0);
+    const justEnoughDepth = input.instruments.map((item, index) => index === 1 ? { ...item, noBook: { ...item.noBook, asks: [{ ...item.noBook.asks[0]!, quantity: d("0.8333333333334") }] } } : item);
+    const depthBoundary = await compileTerminalPayoff({ ...input, instruments: justEnoughDepth });
+    expect(depthBoundary.status).toBe("FEASIBLE");
+    if (depthBoundary.status === "FEASIBLE") expect(depthBoundary.executionSegments.every((segment) => segment.quantity.compare(segment.maximumAvailableAtSnapshot) <= 0)).toBe(true);
+    const shallow = input.instruments.map((item, index) => index === 1 ? { ...item, noBook: { ...item.noBook, asks: [{ ...item.noBook.asks[0]!, quantity: d("0.833333333333") }] } } : item);
+    const tooShallow = await compileTerminalPayoff({ ...input, instruments: shallow });
+    expect(tooShallow).toMatchObject({ status: "INFEASIBLE", reason: "INSUFFICIENT_LIQUIDITY_OR_COVERAGE" });
+  });
+
+  it("is deterministic across repeated solves and fails closed at a sub-grid budget", async () => {
+    const input = liveGeometry();
+    const first = await compileTerminalPayoff(input); const second = await compileTerminalPayoff(input);
+    expect(first.status).toBe("FEASIBLE"); expect(second.status).toBe("FEASIBLE");
+    if (first.status !== "FEASIBLE" || second.status !== "FEASIBLE") return;
+    expect(first.executionSegments.map((segment) => segment.quantity.toString())).toEqual(second.executionSegments.map((segment) => segment.quantity.toString()));
+    expect(first.totalAcquisitionCost.toString()).toBe(second.totalAcquisitionCost.toString());
+    const budgetTight = await compileTerminalPayoff({ ...input, maximumAcquisitionCost: d("3.58333333333302") });
+    expect(budgetTight.status).not.toBe("FEASIBLE");
+    if (budgetTight.status === "VERIFICATION_FAILED") {
+      expect(budgetTight.failureReasons).toContain("PAYOFF_FAILED");
+      expect(budgetTight.exactDeficit?.toString()).toBe("0.00000000000002");
+    }
+  });
+});
+
+describe("exact compiler output properties", () => {
+  it("independently verifies every feasible randomized construction, depth, and total cost", async () => {
+    await fc.assert(fc.asyncProperty(fc.record({ priceCents: fc.integer({ min: 10, max: 90 }), depth: fc.integer({ min: 1, max: 100 }), budgetCents: fc.integer({ min: 0, max: 2000 }), floor: fc.integer({ min: -99, max: -1 }) }), async ({ priceCents, depth, budgetCents, floor }) => {
+      const price = d(`${Math.floor(priceCents / 100)}.${String(priceCents % 100).padStart(2, "0")}`);
+      const input = request({ constraint: { minimumTerminalPnl: d(String(floor)) }, maximumAcquisitionCost: d(`${Math.floor(budgetCents / 100)}.${String(budgetCents % 100).padStart(2, "0")}`), instruments: [instrument("15", "50", [], [[price.toString(), String(depth)]])] });
+      const result = await compileTerminalPayoff(input);
+      if (result.status !== "FEASIBLE") return;
+      const independent = verifyTerminalPayoff(portfolioFromSegments(input, result.executionSegments), { settlementPriceMin: input.settlement.priceRange.min, settlementPriceMax: input.settlement.priceRange.max, minimumPnl: input.constraint.minimumTerminalPnl });
+      expect(independent.holds).toBe(true);
+      expect(result.executionSegments.every((segment) => !segment.quantity.isNegative() && segment.quantity.compare(segment.maximumAvailableAtSnapshot) <= 0)).toBe(true);
+      expect(result.executionSegments.reduce((sum, segment) => sum.add(segment.acquisitionCost).add(segment.estimatedFee), d("0")).compare(input.maximumAcquisitionCost)).toBeLessThanOrEqual(0);
+    }), { seed: 20261005, numRuns: 50 });
   });
 });
 

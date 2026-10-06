@@ -56,6 +56,7 @@ export interface CompilerDiagnostics {
   readonly solverStatus: string;
   readonly solverFeasibilityTolerance: "1e-7 (solver only)";
   readonly candidateDecimalPlaces: 12;
+  readonly repairMaximumDecimalPlaces: 15;
   readonly exactPostSolveVerification: true;
 }
 
@@ -92,7 +93,8 @@ export interface AlreadySatisfiedResult extends ResultContext {
 export type InfeasibilityReason = "NO_ELIGIBLE_MARKETS" | "STALE_MARKET_DATA" | "INSUFFICIENT_LIQUIDITY_OR_COVERAGE" | "BUDGET_TOO_LOW";
 export interface InfeasibleResult extends ResultContext { readonly status: "INFEASIBLE"; readonly reason: InfeasibilityReason; readonly explanation: string; readonly minimumAcquisitionCost?: DecimalAmount; }
 export interface InvalidRequestResult { readonly status: "INVALID_REQUEST"; readonly issues: readonly string[]; }
-export interface VerificationFailedResult extends ResultContext { readonly status: "VERIFICATION_FAILED"; readonly explanation: string; readonly verification?: SettlementPayoffVerification; readonly executionSegments: readonly ExecutionSegment[]; readonly diagnostics: CompilerDiagnostics; }
+export type VerificationFailureReason = "PAYOFF_FAILED" | "BUDGET_FAILED" | "DEPTH_FAILED" | "RECONSTRUCTION_FAILED";
+export interface VerificationFailedResult extends ResultContext { readonly status: "VERIFICATION_FAILED"; readonly failureReasons: readonly VerificationFailureReason[]; readonly explanation: string; readonly exactDeficit?: DecimalAmount; readonly verification?: SettlementPayoffVerification; readonly executionSegments: readonly ExecutionSegment[]; readonly diagnostics: CompilerDiagnostics; }
 export interface SolverFailureResult extends ResultContext { readonly status: "SOLVER_FAILURE"; readonly solverStatus: string; readonly explanation: string; }
 
 export type CompileTerminalPayoffResult = FeasibleResult | AlreadySatisfiedResult | InfeasibleResult | InvalidRequestResult | VerificationFailedResult | SolverFailureResult;
