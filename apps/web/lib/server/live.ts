@@ -95,7 +95,7 @@ export async function compileLive(input: LiveCompileInput): Promise<CompilationD
   };
   const marketSnapshotIdentity = executionSnapshot(request).identity;
   const result = await compileTerminalPayoff(request);
-  return presentCompilerResult(request, result, { mode: "live", requestIdentity, marketContextIdentity: input.marketContextIdentity, marketSnapshotIdentity }, planLiveExecution(request, result, requestIdentity));
+  return presentCompilerResult(request, result, { mode: "live", requestIdentity, targetPresentation: input.constraintMode, marketContextIdentity: input.marketContextIdentity, marketSnapshotIdentity }, planLiveExecution(request, result, requestIdentity));
 }
 
 async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {

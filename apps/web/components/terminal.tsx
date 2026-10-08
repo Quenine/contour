@@ -92,7 +92,6 @@ export function Terminal(): React.JSX.Element {
     }
   }, []);
 
-  useEffect(() => { void runFixture(); }, [runFixture]);
   useEffect(() => { if (mode === "live") void loadLive(); }, [loadLive, mode]);
 
   const compileLive = async (): Promise<void> => {
@@ -126,7 +125,8 @@ export function Terminal(): React.JSX.Element {
   };
 
   return <main className="terminal-shell"><header className="topbar"><div><a className="wordmark" href="/">CONTOUR</a><p>Compile the payoff you want.</p></div><nav><a href="#terminal">Terminal</a><a href="/system">System</a><span className="readonly">READ-ONLY</span></nav></header>
-    <section className="terminal-intro"><div><p className="eyebrow">HYPERLIQUID SETTLEMENT PAYOFF COMPILER</p><h1>Specify the settlement outcome.<br />Inspect the construction.</h1></div><p>Position, payoff intent, construction, and exact proof — all tied to the same request.</p></section>
+    <section className="terminal-intro"><div><p className="eyebrow">HYPERLIQUID SETTLEMENT PAYOFF COMPILER</p><h1>Turn a risk limit into<br />a verified payoff.</h1></div><p>Tell Contour the position you have and the settlement risk you can tolerate. It searches same-settlement Hyperliquid outcome liquidity, constructs a qualifying overlay, and proves the resulting payoff exactly.</p></section>
+    <ol className="workflow-cue" aria-label="Contour workflow"><li><span>1</span>Position</li><li><span>2</span>Risk target</li><li><span>3</span>Compile</li><li><span>4</span>Verify</li></ol>
     <section id="terminal" className="mode-switch" aria-label="Workflow mode"><button type="button" className={mode === "fixture" ? "active" : ""} onClick={() => switchMode("fixture")}>Verified Fixture Demo <small>deterministic</small></button><button type="button" className={mode === "live" ? "active" : ""} onClick={() => switchMode("live")}>Live Market <small>read-only</small></button>{mode === "live" && <button type="button" className="text-button" onClick={() => void loadLive()}>Refresh market status</button>}</section>
     {mode === "live" && live?.unavailableReason && <div className="notice error-notice" role="status">{live.unavailableReason} No fixture data has been substituted.</div>}
     {error && <div className="notice error-notice" role="alert">{error}</div>}

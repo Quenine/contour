@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { compileTerminalPayoff, type CompileTerminalPayoffResult } from "@contour/compiler";
+import type { CompilationDto } from "../lib/presentation/types.js";
 import { DecimalAmount } from "@contour/domain";
 import { verifyTerminalPayoff } from "@contour/payoff";
 import { invalidatedCompileState } from "../lib/presentation/compile-state.js";
@@ -18,6 +19,7 @@ import { planLiveExecution } from "../lib/server/execution.js";
 import { executionSnapshot } from "@contour/execution";
 import { presentCompilerResult } from "../lib/server/presentation.js";
 import { planFixtureExecution } from "../lib/server/execution.js";
+import { payoffChartEmptyState } from "../lib/presentation/payoff-chart-state.js";
 
 const fixtureIdentity = { mode: "fixture" as const, requestIdentity: verifiedFixtureRequestIdentity };
 const liveInput = (overrides: Partial<LiveRequestFingerprintInput> = {}): LiveRequestFingerprintInput => ({ mode: "live", exposure: { source: "synthetic", direction: "long", quantity: "0.01", entryPrice: "80000" }, settlementTimestamp: "2026-10-02T00:00:00.000Z", minimumPrice: "70000", maximumPrice: "90000", constraintMode: "minimumPnl", constraintValue: "-500", maximumBudget: "100", feeTreatment: "excluded", ...overrides });
@@ -32,6 +34,28 @@ describe("web orchestration", () => {
     expect(dto.status).toBe("FEASIBLE"); expect(dto.verification?.passed).toBe(true); expect(dto.executionSegments?.length).toBeGreaterThan(0); expect(dto.chart?.note).toContain("Visualization samples only");
     expect(request.existingPortfolio.components[0]).toMatchObject({ quantity: DecimalAmount.parse(VERIFIED_FIXTURE.quantity), entryPrice: DecimalAmount.parse(VERIFIED_FIXTURE.entryPrice) });
     expect(request.settlement.priceRange.min.toString()).toBe(VERIFIED_FIXTURE.minimumPrice); expect(request.settlement.priceRange.max.toString()).toBe(VERIFIED_FIXTURE.maximumPrice);
+  });
+  it("keeps the fixture initial state uncompiled and allows deterministic reruns", async () => {
+    expect(payoffChartEmptyState(undefined)).toBe("Awaiting a verified construction.");
+    const request = createFixtureRequest();
+    const first = await compileTerminalPayoff(request); const second = await compileTerminalPayoff(request);
+    expect(first.status).toBe("FEASIBLE"); expect(second.status).toBe("FEASIBLE");
+    expect(first.status === "FEASIBLE" && second.status === "FEASIBLE" ? second.executionSegments.map((segment) => segment.quantity.toString()) : []).toEqual(first.status === "FEASIBLE" ? first.executionSegments.map((segment) => segment.quantity.toString()) : []);
+  });
+  it.each([
+    ["ALREADY_SATISFIED", "No construction required. The current position already meets this target."],
+    ["INFEASIBLE", "No verified construction was found for this request."],
+    ["VERIFICATION_FAILED", "A candidate could not pass exact proof."],
+    ["SOLVER_FAILURE", "Compilation did not complete successfully."]
+  ] as const)("uses state-aware payoff copy for %s", (status, message) => {
+    const result = { mode: "live" as const, requestIdentity: "request", status, freshness: [] } as CompilationDto;
+    expect(payoffChartEmptyState(result)).toBe(message);
+    expect(payoffChartEmptyState(result)).not.toContain("Awaiting");
+  });
+  it("keeps the feasible payoff chart path and clears the presentation state on input invalidation", async () => {
+    const request = createFixtureRequest(); const result = await compileTerminalPayoff(request); const dto = presentCompilerResult(request, result, fixtureIdentity);
+    expect(dto.status).toBe("FEASIBLE"); expect(dto.chart?.points.length).toBeGreaterThan(0); expect(dto.chart?.note).toContain("Visualization samples only");
+    expect(invalidatedCompileState()).toEqual({ progress: "inputs changed", result: undefined, error: undefined });
   });
   it("attaches a READY, identity-bound dry-run preview to the feasible fixture", async () => {
     const request = createFixtureRequest(); const result = await compileTerminalPayoff(request); const execution = planFixtureExecution(request, result, verifiedFixtureRequestIdentity); const dto = presentCompilerResult(request, result, fixtureIdentity, execution);
@@ -103,6 +127,29 @@ describe("web orchestration", () => {
     expect(presentCompilerResult(base, satisfied, fixtureIdentity).status).toBe("ALREADY_SATISFIED"); expect(presentCompilerResult(base, infeasible, fixtureIdentity).status).toBe("INFEASIBLE");
     const liveInfeasible = presentCompilerResult(base, infeasible, { mode: "live", requestIdentity: "live", marketSnapshotIdentity: executionSnapshot(base).identity });
     expect(liveInfeasible.liveMarketDiagnostics).toMatchObject({ eligibleMarkets: 3, eligibleMarketIds: ["101", "102", "103"], yesAskLevels: 3, noAskLevels: 4 });
+  });
+  it("builds the feasible payoff summary from exact server verification rather than chart samples", async () => {
+    const request = createFixtureRequest(); const result = await compileTerminalPayoff(request); const dto = presentCompilerResult(request, result, fixtureIdentity);
+    expect(dto.status).toBe("FEASIBLE");
+    expect(dto.riskSummary).toMatchObject({ existingExposure: { direction: "long", quantity: VERIFIED_FIXTURE.quantity, entryPrice: VERIFIED_FIXTURE.entryPrice }, existingWorstCasePnl: "-1400", target: { mode: "minimumPnl", value: VERIFIED_FIXTURE.minimumTerminalPnl }, selectedPositionCount: 3, executionSegmentCount: 3 });
+    expect(dto.riskSummary?.compiledWorstCasePnl).toBe(dto.verification?.worstCasePnl);
+    expect(dto.riskSummary?.improvement).toBe("600.0000000000003");
+    expect(dto.chart?.note).toContain("Visualization samples only");
+  });
+  it("presents maximum loss as an exact target while retaining the canonical minimum PnL", async () => {
+    const request = createFixtureRequest(); const result = await compileTerminalPayoff(request); const dto = presentCompilerResult(request, result, { ...fixtureIdentity, targetPresentation: "maximumLoss" });
+    expect(dto.riskSummary?.target).toEqual({ mode: "maximumLoss", value: "800", minimumPnl: "-800" });
+  });
+  it("summarizes short exposure and a one-position construction from server values", async () => {
+    const request = createFixtureRequest(); const shortRequest = { ...request, existingPortfolio: { components: [{ ...request.existingPortfolio.components[0]!, direction: "short" as const }] }, constraint: { minimumTerminalPnl: DecimalAmount.parse("-540") }, maximumAcquisitionCost: DecimalAmount.parse("500"), instruments: [request.instruments[1]!] };
+    const result = await compileTerminalPayoff(shortRequest); const dto = presentCompilerResult(shortRequest, result, fixtureIdentity);
+    expect(dto.status).toBe("FEASIBLE"); expect(dto.riskSummary?.existingExposure?.direction).toBe("short"); expect(dto.riskSummary?.selectedPositionCount).toBe(1); expect(dto.selectedPositions?.[0]?.outcomeExplanation).toContain("YES benefits");
+  });
+  it("keeps exact risk context for already-satisfied and infeasible states", async () => {
+    const request = createFixtureRequest(); const satisfied = await compileTerminalPayoff({ ...request, constraint: { minimumTerminalPnl: DecimalAmount.parse("-2000") } }); const infeasible = await compileTerminalPayoff({ ...request, maximumAcquisitionCost: DecimalAmount.zero });
+    const satisfiedDto = presentCompilerResult(request, satisfied, fixtureIdentity); const infeasibleDto = presentCompilerResult(request, infeasible, fixtureIdentity);
+    expect(satisfiedDto.riskSummary).toMatchObject({ existingWorstCasePnl: "-1400", selectedPositionCount: 0 }); expect(satisfiedDto.acquisitionCost).toBe("0");
+    expect(infeasibleDto.riskSummary).toMatchObject({ existingWorstCasePnl: "-1400", target: { minimumPnl: "-800" } }); expect(infeasibleDto.infeasibility?.reason).toBe("BUDGET_TOO_LOW");
   });
   it("maps verification failure as a persistent non-success presentation", () => {
     const request = createFixtureRequest(); const verification = verifyTerminalPayoff(request.existingPortfolio, { settlementPriceMin: request.settlement.priceRange.min, settlementPriceMax: request.settlement.priceRange.max, minimumPnl: request.constraint.minimumTerminalPnl });

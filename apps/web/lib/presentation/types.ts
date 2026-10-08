@@ -18,7 +18,18 @@ export interface PublicAccountDto { readonly address: string; readonly positions
 export interface ChartPointDto { readonly price: number; readonly originalPnl: number; readonly compiledPnl?: number; }
 export interface StrikeMarkerDto { readonly price: number; readonly label: string; }
 export interface VerificationDto { readonly passed: boolean; readonly worstCasePnl: string; readonly worstCasePrice: string; readonly worstCasePosition: string; readonly boundaryStateCount: number; readonly points: readonly { readonly price: string; readonly position: string; readonly pnl: string }[]; }
-export interface PositionDto { readonly marketId: string; readonly statement: string; readonly side: "yes" | "no"; readonly quantity: string; readonly weightedAverage: { readonly acquisitionCost: string; readonly quantity: string }; readonly acquisitionCost: string; readonly estimatedFee: string; }
+export interface PositionDto { readonly marketId: string; readonly statement: string; readonly side: "yes" | "no"; readonly outcomeExplanation: string; readonly quantity: string; readonly weightedAverage: { readonly acquisitionCost: string; readonly quantity: string }; readonly acquisitionCost: string; readonly estimatedFee: string; }
+export interface RiskSummaryDto {
+  readonly existingExposure?: { readonly direction: "long" | "short"; readonly quantity: string; readonly entryPrice: string; };
+  readonly existingWorstCasePnl: string;
+  readonly existingWorstCasePrice: string;
+  readonly existingWorstCasePosition: string;
+  readonly target: { readonly mode: "minimumPnl" | "maximumLoss"; readonly value: string; readonly minimumPnl: string; };
+  readonly compiledWorstCasePnl?: string;
+  readonly improvement?: string;
+  readonly selectedPositionCount: number;
+  readonly executionSegmentCount: number;
+}
 export interface ExecutionSegmentDto { readonly marketId: string; readonly side: "yes" | "no"; readonly bookLevel: number; readonly bookPrice: string; readonly quantity: string; readonly available: string; readonly acquisitionCost: string; readonly estimatedFee: string; }
 export interface ExecutionOrderDto { readonly sequence: number; readonly intentId: string; readonly marketId: string; readonly side: "yes" | "no"; readonly assetId: string; readonly sourceBookLevel: number; readonly sourcePrice: string; readonly sourceAvailable: string; readonly limitPrice: string; readonly quantity: string; readonly notional: string; readonly szDecimals: number; readonly minimumNotional: string; readonly protocolFee: string; readonly builderFee: "DISABLED" | "UNSUPPORTED"; }
 export interface ExecutionPreviewDto {
@@ -57,6 +68,8 @@ export interface CompilationDto {
   readonly estimatedFees?: string;
   readonly feeTreatment?: string;
   readonly verification?: VerificationDto;
+  /** Exact server-side values; chart points are never an authority for these fields. */
+  readonly riskSummary?: RiskSummaryDto;
   readonly selectedPositions?: readonly PositionDto[];
   readonly executionSegments?: readonly ExecutionSegmentDto[];
   readonly executionPreview?: ExecutionPreviewDto;

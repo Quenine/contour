@@ -1,5 +1,5 @@
 import { DecimalAmount, type BinaryPriceOutcome } from "@contour/domain";
-import { terminalPnl, type BinaryTerminalComponent, type TerminalPortfolio } from "@contour/payoff";
+import { terminalPnl, verifyTerminalPayoff, type BinaryTerminalComponent, type TerminalPortfolio } from "@contour/payoff";
 import type { CompileTerminalPayoffRequest, CompileTerminalPayoffResult } from "@contour/compiler";
 import type { ChartPointDto, CompilationDto, FreshnessDto, TerminalMode } from "../presentation/types";
 import { freshnessState } from "./input";
@@ -54,8 +54,23 @@ function liveMarketDiagnostics(request: CompileTerminalPayoffRequest): NonNullab
 export interface PresentationIdentity {
   readonly mode: TerminalMode;
   readonly requestIdentity: string;
+  readonly targetPresentation?: "minimumPnl" | "maximumLoss";
   readonly marketContextIdentity?: string;
   readonly marketSnapshotIdentity?: string;
+}
+
+function riskSummary(request: CompileTerminalPayoffRequest, result: Exclude<CompileTerminalPayoffResult, { status: "INVALID_REQUEST" }>, targetPresentation: "minimumPnl" | "maximumLoss"): NonNullable<CompilationDto["riskSummary"]> {
+  const existing = verifyTerminalPayoff(request.existingPortfolio, { settlementPriceMin: request.settlement.priceRange.min, settlementPriceMax: request.settlement.priceRange.max, minimumPnl: request.constraint.minimumTerminalPnl });
+  const compiled = result.status === "FEASIBLE" || result.status === "ALREADY_SATISFIED" ? result.verification : undefined;
+  const existingPerpetual = request.existingPortfolio.components.find((component) => component.kind === "perpetual");
+  return {
+    ...(existingPerpetual ? { existingExposure: { direction: existingPerpetual.direction, quantity: existingPerpetual.quantity.toString(), entryPrice: existingPerpetual.entryPrice.toString() } } : {}),
+    existingWorstCasePnl: existing.worstCase.terminalPnl.toString(), existingWorstCasePrice: existing.worstCase.price.toString(), existingWorstCasePosition: existing.worstCase.position,
+    target: { mode: targetPresentation, value: targetPresentation === "maximumLoss" ? request.constraint.minimumTerminalPnl.abs().toString() : request.constraint.minimumTerminalPnl.toString(), minimumPnl: request.constraint.minimumTerminalPnl.toString() },
+    ...(compiled ? { compiledWorstCasePnl: compiled.worstCase.terminalPnl.toString(), improvement: compiled.worstCase.terminalPnl.subtract(existing.worstCase.terminalPnl).toString() } : {}),
+    selectedPositionCount: result.status === "FEASIBLE" ? result.selectedPositions.length : 0,
+    executionSegmentCount: result.status === "FEASIBLE" ? result.executionSegments.length : 0
+  };
 }
 
 function identityFields(identity: PresentationIdentity): Pick<CompilationDto, "mode" | "requestIdentity"> & Partial<Pick<CompilationDto, "marketContextIdentity" | "marketSnapshotIdentity">> {
@@ -77,22 +92,25 @@ export function presentCompilerResult(request: CompileTerminalPayoffRequest, res
   const identified = identityFields(identity);
   if (result.status === "INVALID_REQUEST") return { ...identified, status: result.status, issues: result.issues, freshness: [] };
   if (result.status === "ALREADY_SATISFIED") return {
-    ...identified, status: result.status, ...common(result), acquisitionCost: "0", estimatedFees: "0", feeTreatment: request.policy.feeModel.kind,
+    ...identified, status: result.status, ...common(result), riskSummary: riskSummary(request, result, identity.targetPresentation ?? "minimumPnl"), acquisitionCost: "0", estimatedFees: "0", feeTreatment: request.policy.feeModel.kind,
     verification: { passed: result.verification.holds, worstCasePnl: result.verification.worstCase.terminalPnl.toString(), worstCasePrice: result.verification.worstCase.price.toString(), worstCasePosition: result.verification.worstCase.position, boundaryStateCount: result.verification.evaluatedPoints.length, points: result.verification.evaluatedPoints.map((point) => ({ price: point.price.toString(), position: point.position, pnl: point.terminalPnl.toString() })) },
     selectedPositions: [], executionSegments: [], freshness: []
   };
-  if (result.status === "INFEASIBLE") return { ...identified, status: result.status, ...common(result), infeasibility: { reason: result.reason, explanation: result.explanation, ...(result.minimumAcquisitionCost ? { minimumRequiredBudget: result.minimumAcquisitionCost.toString() } : {}) }, freshness: [], ...(identity.mode === "live" ? { liveMarketDiagnostics: liveMarketDiagnostics(request) } : {}) };
-  if (result.status === "SOLVER_FAILURE") return { ...identified, status: result.status, ...common(result), explanation: `${result.solverStatus}: ${result.explanation}`, freshness: [] };
-  if (result.status === "VERIFICATION_FAILED") return { ...identified, status: result.status, ...common(result), explanation: result.explanation,
+  if (result.status === "INFEASIBLE") return { ...identified, status: result.status, ...common(result), riskSummary: riskSummary(request, result, identity.targetPresentation ?? "minimumPnl"), infeasibility: { reason: result.reason, explanation: result.explanation, ...(result.minimumAcquisitionCost ? { minimumRequiredBudget: result.minimumAcquisitionCost.toString() } : {}) }, freshness: [], ...(identity.mode === "live" ? { liveMarketDiagnostics: liveMarketDiagnostics(request) } : {}) };
+  if (result.status === "SOLVER_FAILURE") return { ...identified, status: result.status, ...common(result), riskSummary: riskSummary(request, result, identity.targetPresentation ?? "minimumPnl"), explanation: `${result.solverStatus}: ${result.explanation}`, freshness: [] };
+  if (result.status === "VERIFICATION_FAILED") return { ...identified, status: result.status, ...common(result), riskSummary: riskSummary(request, result, identity.targetPresentation ?? "minimumPnl"), explanation: result.explanation,
     verificationFailure: { reasons: result.failureReasons, ...(result.verification && result.exactDeficit ? { worstCasePrice: result.verification.worstCase.price.toString(), worstCasePosition: result.verification.worstCase.position, worstCasePnl: result.verification.worstCase.terminalPnl.toString(), requestedFloor: result.minimumTerminalPnl.toString(), exactDeficit: result.exactDeficit.toString() } : {}) },
     executionSegments: result.executionSegments.map((segment) => ({ marketId: segment.marketId, side: segment.side, bookLevel: segment.bookLevel, bookPrice: segment.bookPrice.toString(), quantity: segment.quantity.toString(), available: segment.maximumAvailableAtSnapshot.toString(), acquisitionCost: segment.acquisitionCost.toString(), estimatedFee: segment.estimatedFee.toString() })), freshness: [] };
   const verification = result.verification;
   return {
-    ...identified, status: result.status, ...common(result), acquisitionCost: result.totalAcquisitionCost.toString(), estimatedFees: result.estimatedFees.toString(), feeTreatment: result.feeTreatment,
+    ...identified, status: result.status, ...common(result), riskSummary: riskSummary(request, result, identity.targetPresentation ?? "minimumPnl"), acquisitionCost: result.totalAcquisitionCost.toString(), estimatedFees: result.estimatedFees.toString(), feeTreatment: result.feeTreatment,
     verification: { passed: verification.holds, worstCasePnl: verification.worstCase.terminalPnl.toString(), worstCasePrice: verification.worstCase.price.toString(), worstCasePosition: verification.worstCase.position, boundaryStateCount: verification.evaluatedPoints.length, points: verification.evaluatedPoints.map((point) => ({ price: point.price.toString(), position: point.position, pnl: point.terminalPnl.toString() })) },
     selectedPositions: result.selectedPositions.map((position) => {
       const market = request.instruments.find((instrument) => instrument.market.id === position.marketId)?.market;
-      return { marketId: position.marketId, statement: market ? `BTC ${market.comparator === "greaterThan" ? ">" : ">="} ${formatBtcPrice(market.threshold.toString())} at ${formatUtc(market.settlementAt.value)}` : "normalized binary outcome", side: position.side, quantity: position.totalQuantity.toString(), weightedAverage: { acquisitionCost: position.weightedAveragePrice.acquisitionCost.toString(), quantity: position.weightedAveragePrice.quantity.toString() }, acquisitionCost: position.acquisitionCost.toString(), estimatedFee: position.estimatedFee.toString() };
+      const comparator = market?.comparator === "greaterThan" ? ">" : ">=";
+      const statement = market ? `BTC ${comparator} ${formatBtcPrice(market.threshold.toString())} at ${formatUtc(market.settlementAt.value)}` : "normalized binary outcome";
+      const outcomeExplanation = position.side === "yes" ? `YES benefits when BTC settles ${comparator === ">" ? "above" : "at or above"} this threshold.` : `NO benefits when BTC settles ${comparator === ">" ? "at or below" : "below"} this threshold.`;
+      return { marketId: position.marketId, statement, side: position.side, outcomeExplanation, quantity: position.totalQuantity.toString(), weightedAverage: { acquisitionCost: position.weightedAveragePrice.acquisitionCost.toString(), quantity: position.weightedAveragePrice.quantity.toString() }, acquisitionCost: position.acquisitionCost.toString(), estimatedFee: position.estimatedFee.toString() };
     }),
     executionSegments: result.executionSegments.map((segment) => ({ marketId: segment.marketId, side: segment.side, bookLevel: segment.bookLevel, bookPrice: segment.bookPrice.toString(), quantity: segment.quantity.toString(), available: segment.maximumAvailableAtSnapshot.toString(), acquisitionCost: segment.acquisitionCost.toString(), estimatedFee: segment.estimatedFee.toString() })),
     freshness: result.marketSnapshots.map((snapshot) => freshness(snapshot)), ...(execution ? { executionPreview: presentExecution(execution)! } : {}),
