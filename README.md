@@ -95,7 +95,7 @@ Fees are excluded where stated. Exact verification applies to the modelled termi
 
 ## Quick start
 
-Requirements: Node.js 22.12 or newer and pnpm 11.15.1.
+Requirements: Node.js 22.13 or newer and pnpm 11.15.1.
 
 ```sh
 pnpm install --frozen-lockfile
