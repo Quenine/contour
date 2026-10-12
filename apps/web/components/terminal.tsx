@@ -10,6 +10,7 @@ import { PayoffChart } from "./payoff-chart";
 import { ResultPanels } from "./result-panels";
 import { StatusPill } from "./status-pill";
 import { apiErrorMessage } from "../lib/presentation/api-error";
+import { BrandLockup } from "./brand-lockup";
 
 type Progress = "not compiled" | "inputs changed" | "validating" | "fetching market depth" | "compiling" | "verifying" | "feasible" | "already satisfied" | "infeasible" | "invalid request" | "live data unavailable" | "service unavailable" | "verification failure" | "solver failure";
 const stateForResult = (status: CompilationDto["status"]): Progress => ({ FEASIBLE: "feasible", ALREADY_SATISFIED: "already satisfied", INFEASIBLE: "infeasible", INVALID_REQUEST: "invalid request", VERIFICATION_FAILED: "verification failure", SOLVER_FAILURE: "solver failure" } as const)[status];
@@ -124,7 +125,7 @@ export function Terminal(): React.JSX.Element {
     setMode(next); invalidate("not compiled");
   };
 
-  return <main className="terminal-shell"><header className="topbar"><div><a className="wordmark" href="/">CONTOUR</a><p>Compile the payoff you want.</p></div><nav><a href="#terminal">Terminal</a><a href="/system">System</a><span className="readonly">READ-ONLY</span></nav></header>
+  return <main className="terminal-shell"><header className="topbar"><div><BrandLockup /><p>Compile the payoff you want.</p></div><nav><a href="#terminal">Terminal</a><a href="/system">System</a><span className="readonly">READ-ONLY</span></nav></header>
     <section className="terminal-intro"><div><p className="eyebrow">HYPERLIQUID SETTLEMENT PAYOFF COMPILER</p><h1>Turn a risk limit into<br />a verified payoff.</h1></div><p>Tell Contour the position you have and the settlement risk you can tolerate. It searches same-settlement Hyperliquid outcome liquidity, constructs a qualifying overlay, and proves the resulting payoff exactly.</p></section>
     <ol className="workflow-cue" aria-label="Contour workflow"><li><span>1</span>Position</li><li><span>2</span>Risk target</li><li><span>3</span>Compile</li><li><span>4</span>Verify</li></ol>
     <section id="terminal" className="mode-switch" aria-label="Workflow mode"><button type="button" className={mode === "fixture" ? "active" : ""} onClick={() => switchMode("fixture")}>Verified Fixture Demo <small>deterministic</small></button><button type="button" className={mode === "live" ? "active" : ""} onClick={() => switchMode("live")}>Live Market <small>read-only</small></button>{mode === "live" && <button type="button" className="text-button" onClick={() => void loadLive()}>Refresh market status</button>}</section>

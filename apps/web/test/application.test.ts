@@ -98,7 +98,7 @@ describe("web orchestration", () => {
     expect(degraded).toMatchObject({ status: "ok", liveData: "degraded", compiler: "available", verifier: "available", build: { revision: "1234567890ab" } });
   });
   it("produces a stable, non-secret public build identity", () => {
-    expect(createBuildIdentity("abcdef1234567890")).toEqual({ build: "BUILD 04", revision: "abcdef123456" });
+    expect(createBuildIdentity("abcdef1234567890")).toEqual({ build: "SUBMISSION", revision: "abcdef123456" });
     expect(createBuildIdentity("a-private-build-label").revision).toBe("deployment");
   });
   it("maps upstream failures to safe public responses without leaking exception messages", () => {

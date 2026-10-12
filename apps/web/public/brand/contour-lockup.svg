@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 286 64" fill="none">
+  <defs>
+    <linearGradient id="contour-gradient" x1="10" y1="12" x2="55" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6CCBFF"/>
+      <stop offset="0.5" stop-color="#39D5C2"/>
+      <stop offset="1" stop-color="#B8F5D7"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0B0D10"/>
+  <path d="M10 32H54M32 10V54" stroke="#526070" stroke-opacity=".45"/>
+  <path d="M11 45C19 45 22 42 28 36C34 30 39 19 53 18" stroke="url(#contour-gradient)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M11 19C20 19 24 23 29 28C35 34 40 43 53 46" stroke="#E9EDF2" stroke-opacity=".86" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="32" cy="32" r="5.5" fill="#0B0D10" stroke="url(#contour-gradient)" stroke-width="3"/>
+  <circle cx="32" cy="32" r="1.5" fill="#E9EDF2"/>
+  <text x="82" y="41" fill="#E9EDF2" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="800" letter-spacing="7">CONTOUR</text>
+</svg>

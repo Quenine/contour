@@ -1,62 +1,120 @@
-# Contour · BUILD 04 technical brief
+# Contour — Hackathon Technical Brief
+
+**Production:** https://contour-ochre.vercel.app
+**Repository:** https://github.com/Quenine/contour
 
 ## Product
 
-Contour turns a terminal PnL constraint over a specified BTC settlement range into a minimum-cost, buy-only HIP-4 binary overlay. It is an inspection and compilation tool, not an execution product. The demo provides an immediately runnable deterministic fixture and a separate public read-only live workflow.
+Contour is a payoff compiler for Hyperliquid outcome markets. It turns a trader’s terminal-settlement risk limit over a selected BTC range into a liquidity-aware, buy-only outcome overlay, then independently verifies the reconstructed payoff with exact decimal arithmetic.
 
-## Problem and protocol opportunity
+It is an inspection and compilation tool, not an execution product. The public terminal combines a deterministic fixture with a separate read-only live workflow.
 
-A portfolio's settlement payoff can be discontinuous, while manually choosing binary outcome positions across multiple strikes is easy to mis-size and expensive to reason about. HIP-4 outcome markets expose price-contingent contracts and observable order-book depth; a construction must therefore reason about both the payoff at settlement and the actual offered liquidity used to build it.
+## The judge-facing workflow
 
-## What is different
+The terminal makes the causal chain explicit:
 
-Contour treats the desired terminal floor as a compilation constraint, rather than asking a trader to hand-pick strikes. It connects a recognized same-settlement outcome universe to an optimization model, then checks the result independently with exact decimal arithmetic. Its output carries request and book-snapshot identities, so a proof is not presented as belonging to a different set of inputs or observations.
+**Position → Risk target → Compile → Verify**
 
-## Compiler formulation and exact verification
+For a feasible result, the final presentation shows:
 
-The compiler models existing perpetual exposure and binary payoff segments over the requested settlement interval. It minimizes acquisition cost subject to the terminal PnL floor, budget, and finite ask-depth constraints. Candidate solver values are reconstructed into exact decimal domain values; an independent interval/boundary verifier determines whether the requested floor holds. A chart samples this function for orientation but is never authoritative.
+1. **Before** — the existing position’s exact unprotected worst case;
+2. **Target** — the requested terminal floor or maximum-loss limit;
+3. **Construction** — the selected outcome positions, depth segments, and acquisition premium; and
+4. **Verified result** — the exact reconstructed worst case that passed proof.
+
+This BUILD 05 judge-clarity layer is presentation only. It does not move payoff, compiler, verifier, or execution logic into the browser. The sampled chart remains illustrative; exact verification remains authoritative.
+
+## Compiler and verification boundary
+
+Contour models existing perpetual exposure and binary outcome payoff segments over the requested settlement interval. It minimizes acquisition cost subject to:
+
+- the requested terminal PnL floor;
+- the acquisition budget; and
+- the finite quantity available at every observed ask level.
+
+The numerical solver is a proposal mechanism. Candidate values are reconstructed into exact decimal domain values and passed to an independent interval/boundary verifier. A result is `FEASIBLE` only when that unchanged verifier passes.
+
+### Near-boundary numerical repair
+
+During live testing, a near-boundary solver candidate missed the exact payoff floor by `0.00000000000002`. Contour did not loosen the verifier. Instead, a bounded deterministic exact-decimal repair step may adjust the reconstructed candidate before it is verified again. If exact proof still does not pass, the result is not `FEASIBLE`.
+
+This preserves the intended division of responsibility: the solver searches; exact arithmetic reconstructs; the independent verifier decides.
 
 ## Liquidity awareness
 
-Each ask level is a separate bounded construction segment. The compiler cannot allocate more quantity to a level than the observed size and reports chosen segments alongside available depth. Reads are timestamped and the live path does not substitute stale or fixture books when a read fails. Book data is uncached; an infeasible result is a valid statement about the eligible current snapshot, not proof the solver failed.
+Each ask level is represented as a separately bounded construction segment. The compiler cannot consume quantity beyond observed depth, and the UI exposes selected segments beside their available liquidity.
 
-## Execution planning and protocol evidence
+Live compilation is tied to a request identity and an exact book-snapshot identity. Current metadata and books are read without cache substitution; a provider failure remains an explicit unavailable/error state, not a fixture fallback. An `INFEASIBLE` result is a truthful outcome for the eligible snapshot, not a synonym for solver failure.
 
-The planner applies protocol normalization, fee/precision/notional rules, snapshot freshness, and a second exact portfolio verification. Every execution-critical rule records authority, source, network, observation time, applicability, and confidence. `STRICT_MAINNET` rejects evidence that is merely empirical, fixture-derived, or not explicitly applicable; unresolved HIP-4 precision keeps live execution readiness blocked. The preview is a dry-run representation only.
+## Demo and live behavior
 
-## Current limitations
+The **Verified Fixture Demo** is deterministic and runs the real compiler, exact verifier, and labelled development dry-run planner locally. It requires no account, wallet, secrets, or upstream network.
 
-The model covers terminal payoff at a specified settlement horizon; it does not model liquidation paths, funding, future liquidity, partial fills, settlement disputes, or guarantee execution. The live integration depends on a public read-only Info API, recognizes only validated BTC binary market formats, excludes fees where shown, and truthfully reports missing or infeasible live data. No wallet or order action exists.
+The **Live Market** path reads public Hyperliquid data and validates it at the server boundary. Depending on the existing position, requested constraint, and eligible same-settlement liquidity, it can return:
 
-## Demo path
+- `FEASIBLE`;
+- `ALREADY_SATISFIED`; or
+- `INFEASIBLE`.
 
-Open the terminal, keep **Verified Fixture Demo** selected, and choose **Run verified demo**. The fixture passes through the same compiler, exact verifier, and development dry-run planner without contacting Hyperliquid. Switch to **Live Market** to inspect freshness and current eligible horizons; provider failures and infeasible snapshots remain distinct from fixture output. Use **Preview Execution** to inspect the non-submitting readiness result.
+Live provider unavailability, invalid input, verification failure, and solver failure are distinct non-success states. The terminal clears a result whenever compiler-affecting inputs, mode, or market identity change.
 
-## Runtime shape
+## Execution evidence gate
 
-`apps/web` is a Next.js App Router app. It serves the terminal, `/system`, fixture compile/preview endpoints, public account inspection, live market discovery/compilation, and `/api/health`. Workspace packages separate domain values, protocol normalization, payoff math, compilation, exact verification, and execution planning. The web DTO is the presentation boundary: protocol payloads and compiler internals do not cross into React.
+Payoff feasibility does not imply safe exchange execution. The execution planner is a separate, snapshot-bound dry run that:
 
-The deterministic fixture runs locally through the same compiler, independent verifier, and dry-run planner. Live compilation fetches current metadata and current side books, uses bounded concurrency, and attaches freshness and exact snapshot identities. A live-provider error remains an explicit error; fixture values are never used as a fallback.
+- normalizes planned quantities, limits, and notionals;
+- checks freshness and evidence-backed execution rules; and
+- independently verifies the normalized post-plan portfolio.
 
-## Trust and financial boundary
+Strict mainnet execution remains intentionally blocked where authoritative HIP-4 quantity-precision evidence is unresolved. The UI shows the blocker rather than guessing. No wallet, private key, signature, approval, order submission, or broadcast path exists in the public build.
 
-The compiler's numerical feasibility and the execution planner's protocol readiness are separate results. BUILD 03.1's evidence model is unchanged: strict-mainnet execution remains blocked when authoritative, applicable precision/notional evidence is unresolved. The fixture may illustrate a labelled dry run, but no report describes it as a submitted order. Chart samples are explanatory only; exact arithmetic and the independent verifier determine whether the constraint holds.
+## Architecture
 
-There is no wallet, key, signature, approval, order-action serialization, order submission, broadcast, custody, or account-control proof. Public account inspection reads public state from a user-supplied address. Fees and venue-dependent risks remain disclosed; there is no liquidation or outcome guarantee.
+```mermaid
+flowchart LR
+  UI[Public terminal] --> API[Validated App Router routes]
+  API --> HL[Read-only Hyperliquid reads]
+  API --> C[Compiler / HiGHS WASM]
+  C --> R[Exact reconstruction]
+  R --> V[Independent exact verifier]
+  V --> E[Evidence-gated dry-run planner]
+  F[Deterministic fixture] --> C
+  E --> DTO[Presentation DTO]
+  DTO --> UI
+```
 
-## BUILD 04 operational protections
+The monorepo separates exact domain values, payoff logic, compiler, Hyperliquid adapter, and execution planner. React receives presentation DTOs only; financial calculations and protocol policy remain server/domain responsibilities.
 
-- Eight-second upstream read timeout, one retry for transient idempotent Info reads, and 15-second in-memory caching/coalescing for successful outcome metadata only.
-- Current order books and public account state are never cached; all API and browser reads use `no-store`.
-- Live book fetches cap at three markets concurrently and reject horizons over 80 eligible markets.
-- Public JSON requests are content-type checked, capped at 16 KiB, and field-validated; public addresses are syntax checked. Expensive routes have bounded per-instance fixed-window limits, with edge/CDN controls recommended for coordinated quotas.
-- API errors are intentionally generic for provider/server failures. Structured logs contain event, error class, service, and time only—never addresses, payloads, or exception messages.
-- `/api/health` reports app/compiler/verifier and live-provider availability separately. `/system` remains renderable during upstream degradation.
-- CSP, HSTS (production), frame denial, MIME sniffing protection, referrer and permissions policies are configured at the app boundary.
-- CI runs lint, typecheck, unit/property tests, and production build without contacting the exchange. The production smoke script checks rendered pages, headers, health/build identity, fixture paths, and method guards.
+## Public terminal and deployment
 
-## Deploy and verify
+The production terminal is responsive for desktop, tablet, and phone widths. It keeps the workflow, exact result panels, technical tables, and evidence blockers accessible without making chart samples authoritative.
 
-Use Node.js 22.12+, pnpm 11.15.1, repository-root install/build, and the `apps/web` Next.js package on Vercel. No secrets are required. See [deployment and operations](DEPLOYMENT.md).
+The production deployment is hosted at https://contour-ochre.vercel.app. The application exposes a health endpoint and a system page that remain useful when the upstream provider is degraded. No application secrets are required for the public read-only terminal.
 
-Quality gates: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`. Production check: `pnpm start` then `pnpm smoke:production -- http://localhost:3000`. Live probes are optional operational observations, not CI gates or execution evidence.
+## Quality and operational checks
+
+The repository uses TypeScript, pnpm, Next.js App Router, React, exact decimal models, HiGHS WASM, Vitest, fast-check, ESLint, GitHub Actions, and Vercel.
+
+CI runs lint, typecheck, unit/property tests, and the production build. The production smoke check covers rendered pages, health/build identity, fixture compilation, dry-run preview, headers, and method guards. Deterministic compiler and execution fixture probes are available for local verification; live probes are informational observations only.
+
+## Correctness and risk limits
+
+Contour covers terminal payoff at the specified settlement horizon and price range. It does not guarantee:
+
+- liquidation avoidance;
+- future liquidity or fills;
+- partial-fill handling beyond the disclosed plan;
+- funding, path-dependent risk, fees where excluded, settlement disputes, or venue availability; or
+- exchange execution.
+
+Those boundaries are deliberate. Exact proof means the modelled terminal payoff passed independent verification; it does not transform unmodelled market or account risks into guarantees.
+
+## Further reading
+
+- [Architecture](ARCHITECTURE.md)
+- [Payoff model](PAYOFF_MODEL.md)
+- [Compiler](COMPILER.md)
+- [Execution planner](EXECUTION_PLANNER.md)
+- [Protocol execution evidence](PROTOCOL_EXECUTION_EVIDENCE.md)
+- [Security](SECURITY.md)
+- [Deployment](DEPLOYMENT.md)
